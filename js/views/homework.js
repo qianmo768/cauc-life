@@ -1,0 +1,246 @@
+import { esc, uid } from '../core/html.js';
+import { todayStr, toLocalInput, fromLocalInput, fmtDateCN } from '../core/date.js';
+import {
+  homeworkStats, sortAssignmentsByDue, groupAssignmentsByCourse,
+  assignmentColor, assignmentDueMeta, ASSIGNMENT_STATUS
+} from '../core/calc.js';
+import { openModal } from '../ui/modal.js';
+import { confirmDialog } from '../ui/confirm.js';
+import { toast } from '../ui/toast.js';
+
+let viewMode = 'due';
+let statusFilter = 'all';
+
+const STATUS_BADGE = { todo: 'muted', doing: 'brand', submitted: 'ok' };
+
+function cardHtml(state, item, today) {
+  const meta = assignmentDueMeta(item, today);
+  const color = assignmentColor(state, item);
+  const status = ASSIGNMENT_STATUS[item.status] || '未开始';
+  const nextAction = item.status === 'submitted'
+    ? { action: 'reopen', label: '撤销已交', cls: '' }
+    : item.status === 'todo'
+      ? { action: 'start', label: '开始做', cls: 'primary' }
+      : { action: 'submit', label: '标记已交', cls: 'primary' };
+
+  return `
+    <div class="hw-card ${item.status === 'submitted' ? 'is-done' : ''}">
+      <div class="row-between">
+        <span class="tag course" style="--course:${esc(color)}">${esc(item.courseName || '未分类')}</span>
+        <span class="badge ${STATUS_BADGE[item.status] || 'muted'}">${status}</span>
+      </div>
+      <div class="hw-title">${esc(item.title)}</div>
+      <div class="hw-meta ${esc(meta.tone)}">${esc(meta.label)}</div>
+      ${item.note ? `<div class="text-xs dim">${esc(item.note)}</div>` : ''}
+      <div class="hw-actions">
+        <button class="btn sm ${nextAction.cls}" type="button" data-action="${nextAction.action}" data-id="${esc(item.id)}">${nextAction.label}</button>
+        <button class="btn sm ghost" type="button" data-action="edit" data-id="${esc(item.id)}">编辑</button>
+        <button class="btn sm ghost" type="button" data-action="del" data-id="${esc(item.id)}">删除</button>
+      </div>
+    </div>
+  `;
+}
+
+export function render(state, ctx = {}) {
+  const today = todayStr();
+  const all = state.data.assignments || [];
+  const stats = homeworkStats(state, today);
+
+  const filtered = all.filter((item) => statusFilter === 'all' || item.status === statusFilter);
+  const sorted = sortAssignmentsByDue(filtered);
+
+  const groups = viewMode === 'course'
+    ? groupAssignmentsByCourse(state, sorted)
+    : [{ name: null, items: sorted }];
+
+  const body = sorted.length
+    ? groups.map((group) => `
+        ${group.name ? `<div class="group-title">${esc(group.name)}<span class="text-xs dim">${group.items.length}</span></div>` : ''}
+        <div class="hw-grid">
+          ${group.items.map((item) => cardHtml(state, item, today)).join('')}
+        </div>
+      `).join('')
+    : `<div class="card pad"><div class="empty">
+         <div class="empty-icon">📚</div>
+         <p class="text-sm dim">${all.length ? '没有符合筛选的作业' : '还没有作业，先记一条吧'}</p>
+         <button class="btn primary sm" type="button" data-action="add">添加作业</button>
+       </div></div>`;
+
+  return `
+    <div class="stack">
+      <div class="card pad">
+        <div class="row-between wrap">
+          <div class="row" style="gap:18px">
+            <div class="stat"><span class="value num">${stats.pending}</span><span class="label">未交</span></div>
+            <div class="stat"><span class="value num" style="color:${stats.dueToday ? 'var(--warn)' : 'inherit'}">${stats.dueToday}</span><span class="label">今天截止</span></div>
+            <div class="stat"><span class="value num" style="color:${stats.overdue ? 'var(--danger)' : 'inherit'}">${stats.overdue}</span><span class="label">已逾期</span></div>
+          </div>
+          <div class="row wrap">
+            <div class="segmented">
+              <button type="button" class="${viewMode === 'due' ? 'active' : ''}" data-action="view" data-value="due">按截止</button>
+              <button type="button" class="${viewMode === 'course' ? 'active' : ''}" data-action="view" data-value="course">按课程</button>
+            </div>
+            <button class="btn primary sm" type="button" data-action="add">＋ 添加作业</button>
+          </div>
+        </div>
+        <div class="row wrap" style="margin-top:12px">
+          ${[['all', '全部'], ['todo', '未开始'], ['doing', '进行中'], ['submitted', '已交']].map(([key, label]) => `
+            <button class="chip ${statusFilter === key ? 'active' : ''}" type="button" data-action="filter" data-value="${key}">${label}</button>`).join('')}
+        </div>
+      </div>
+
+      ${body}
+    </div>
+  `;
+}
+
+function courseOptions(state, selectedId) {
+  return `
+    ${(state.data.courses || []).map((c) => `<option value="${esc(c.id)}" ${c.id === selectedId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+    <option value="__custom" ${!selectedId ? 'selected' : ''}>其他（手动输入）</option>
+  `;
+}
+
+function formHtml(state, item = {}) {
+  const hasCourse = Boolean(item.courseId);
+  return `
+    <form class="stack" data-form="assignment" onsubmit="return false">
+      <div class="field">
+        <label>标题 *</label>
+        <input class="input" name="title" value="${esc(item.title || '')}" placeholder="例如：第三章习题" autocomplete="off">
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>课程</label>
+          <select class="select" name="courseId">${courseOptions(state, item.courseId)}</select>
+        </div>
+        <div class="field" data-custom-wrap ${hasCourse ? 'hidden' : ''}>
+          <label>课程名</label>
+          <input class="input" name="customName" value="${esc(hasCourse ? '' : item.courseName || '')}" placeholder="没在课表里就写这里">
+        </div>
+        <div class="field">
+          <label>截止时间</label>
+          <input class="input" type="datetime-local" name="dueAt" value="${esc(toLocalInput(item.dueAt) || `${todayStr()}T23:59`)}">
+        </div>
+        <div class="field">
+          <label>状态</label>
+          <select class="select" name="status">
+            <option value="todo" ${item.status === 'todo' || !item.status ? 'selected' : ''}>未开始</option>
+            <option value="doing" ${item.status === 'doing' ? 'selected' : ''}>进行中</option>
+            <option value="submitted" ${item.status === 'submitted' ? 'selected' : ''}>已交</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label>备注</label>
+          <textarea class="textarea" name="note" style="min-height:70px">${esc(item.note || '')}</textarea>
+        </div>
+      </div>
+      <p class="err hidden" data-error></p>
+    </form>
+  `;
+}
+
+function openForm(store, rerender, existing = null) {
+  const state = store.state;
+  const { close } = openModal({
+    title: existing ? '编辑作业' : '添加作业',
+    wide: true,
+    body: formHtml(state, existing || {}),
+    footer: `<button class="btn" type="button" data-cancel>取消</button>
+             <button class="btn primary" type="button" data-save>保存</button>`,
+    onMount: (mask, { close }) => {
+      const form = mask.querySelector('[data-form="assignment"]');
+      const customWrap = mask.querySelector('[data-custom-wrap]');
+      form.elements.courseId.addEventListener('change', () => {
+        const isCustom = form.elements.courseId.value === '__custom';
+        customWrap.classList.toggle('hidden', !isCustom);
+      });
+      customWrap.classList.toggle('hidden', form.elements.courseId.value !== '__custom');
+
+      mask.querySelector('[data-cancel]').addEventListener('click', close);
+      mask.querySelector('[data-save]').addEventListener('click', () => {
+        const title = form.elements.title.value.trim();
+        const errorEl = mask.querySelector('[data-error]');
+        if (!title) {
+          errorEl.textContent = '标题不能为空';
+          errorEl.classList.remove('hidden');
+          return;
+        }
+        const isCustom = form.elements.courseId.value === '__custom';
+        const course = (state.data.courses || []).find((c) => c.id === form.elements.courseId.value);
+        const courseName = isCustom
+          ? (form.elements.customName.value.trim() || '未分类')
+          : (course ? course.name : '未分类');
+        const patch = {
+          title,
+          courseId: isCustom ? null : form.elements.courseId.value,
+          courseName,
+          dueAt: fromLocalInput(form.elements.dueAt.value),
+          status: form.elements.status.value,
+          note: form.elements.note.value.trim(),
+          updatedAt: new Date().toISOString()
+        };
+        if (patch.status === 'submitted' && !existing) patch.submittedAt = new Date().toISOString();
+
+        store.update((d) => {
+          if (existing) {
+            const target = d.data.assignments.find((a) => a.id === existing.id);
+            if (target) Object.assign(target, patch);
+          } else {
+            d.data.assignments.push({
+              id: uid('a'), submittedAt: null, ...patch
+            });
+          }
+        });
+        close();
+        rerender();
+        toast(existing ? '作业已更新' : '作业已添加');
+      });
+    }
+  });
+}
+
+function setStatus(store, rerender, id, status) {
+  store.update((d) => {
+    const item = d.data.assignments.find((a) => a.id === id);
+    if (!item) return;
+    item.status = status;
+    item.updatedAt = new Date().toISOString();
+    if (status === 'submitted' && !item.submittedAt) item.submittedAt = new Date().toISOString();
+    if (status !== 'submitted') item.submittedAt = null;
+  });
+  rerender();
+}
+
+export function bind(root, { store, rerender }) {
+  root.addEventListener('click', async (event) => {
+    const el = event.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    const id = el.dataset.id;
+
+    if (action === 'view') { viewMode = el.dataset.value; rerender(); return; }
+    if (action === 'filter') { statusFilter = el.dataset.value; rerender(); return; }
+    if (action === 'add') { openForm(store, rerender); return; }
+
+    const item = store.state.data.assignments.find((a) => a.id === id);
+    if (!item && action !== 'add') return;
+
+    if (action === 'start') setStatus(store, rerender, id, 'doing');
+    else if (action === 'submit') { setStatus(store, rerender, id, 'submitted'); toast('已标记为已交 🎉'); }
+    else if (action === 'reopen') setStatus(store, rerender, id, 'doing');
+    else if (action === 'edit') openForm(store, rerender, item);
+    else if (action === 'del') {
+      const ok = await confirmDialog({
+        title: '删除作业',
+        message: `确定删除「${item.title}」吗？`,
+        confirmText: '删除',
+        danger: true
+      });
+      if (!ok) return;
+      store.update((d) => { d.data.assignments = d.data.assignments.filter((a) => a.id !== id); });
+      rerender();
+      toast('作业已删除');
+    }
+  });
+}

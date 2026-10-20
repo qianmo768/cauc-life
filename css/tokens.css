@@ -1,0 +1,97 @@
+/* 设计变量：颜色、间距、圆角、字体 */
+:root {
+  color-scheme: light;
+  --bg: #f5f7fb;
+  --bg-elev: #ffffff;
+  --bg-soft: #eef1f7;
+  --bg-hover: #f0f3f9;
+  --text: #1b232f;
+  --text-2: #5a6577;
+  --text-3: #8a94a6;
+  --line: #e4e8f0;
+  --line-strong: #d3d9e5;
+  --brand: #2f6bff;
+  --brand-2: #6c9bff;
+  --brand-soft: rgba(47, 107, 255, 0.1);
+  --ok: #1f9d63;
+  --ok-soft: rgba(31, 157, 99, 0.12);
+  --warn: #d98510;
+  --warn-soft: rgba(217, 133, 16, 0.14);
+  --danger: #d94436;
+  --danger-soft: rgba(217, 68, 54, 0.12);
+  --shadow: 0 10px 30px rgba(22, 34, 56, 0.1);
+  --shadow-sm: 0 2px 8px rgba(22, 34, 56, 0.06);
+  --radius-sm: 10px;
+  --radius: 14px;
+  --radius-lg: 20px;
+  --font: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --sidebar-w: 220px;
+  --tabbar-h: 62px;
+  --topbar-h: 64px;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #11151d;
+  --bg-elev: #171d27;
+  --bg-soft: #1e2632;
+  --bg-hover: #222b39;
+  --text: #e8edf5;
+  --text-2: #a7b2c2;
+  --text-3: #788494;
+  --line: #27303d;
+  --line-strong: #333e4e;
+  --brand: #6d9bff;
+  --brand-2: #8fb4ff;
+  --brand-soft: rgba(109, 155, 255, 0.16);
+  --ok: #3ecf8e;
+  --ok-soft: rgba(62, 207, 142, 0.16);
+  --warn: #f0b04a;
+  --warn-soft: rgba(240, 176, 74, 0.16);
+  --danger: #ff6b5e;
+  --danger-soft: rgba(255, 107, 94, 0.16);
+  --shadow: 0 12px 34px rgba(0, 0, 0, 0.42);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+  [data-theme="auto"] {
+    color-scheme: dark;
+    --bg: #11151d;
+    --bg-elev: #171d27;
+    --bg-soft: #1e2632;
+    --bg-hover: #222b39;
+    --text: #e8edf5;
+    --text-2: #a7b2c2;
+    --text-3: #788494;
+    --line: #27303d;
+    --line-strong: #333e4e;
+    --brand: #6d9bff;
+    --brand-2: #8fb4ff;
+    --brand-soft: rgba(109, 155, 255, 0.16);
+    --ok: #3ecf8e;
+    --ok-soft: rgba(62, 207, 142, 0.16);
+    --warn: #f0b04a;
+    --warn-soft: rgba(240, 176, 74, 0.16);
+    --danger: #ff6b5e;
+    --danger-soft: rgba(255, 107, 94, 0.16);
+    --shadow: 0 12px 34px rgba(0, 0, 0, 0.42);
+    --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* 课程色（课程标签与课表块共用） */
+.palette-0 { --course: #2f6bff; }
+.palette-1 { --course: #e0562f; }
+.palette-2 { --course: #1f9d63; }
+.palette-3 { --course: #a45bd8; }
+.palette-4 { --course: #c98a0b; }
+.palette-5 { --course: #1f8fa8; }
+.palette-6 { --course: #d8447a; }
+.palette-7 { --course: #5c6f8c; }
