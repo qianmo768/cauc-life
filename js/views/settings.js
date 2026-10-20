@@ -1,6 +1,7 @@
 import { esc } from '../core/html.js';
 import { api } from '../api.js';
 import { dataOverview, dataCounts } from '../core/calc.js';
+import { applyBackground, clampDim, isImageDataUrl } from '../ui/theme.js';
 import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
@@ -28,6 +29,7 @@ export function render(state, ctx = {}) {
   const overview = dataOverview(state);
   const counts = dataCounts(state);
   const settings = state.data.settings;
+  const bgImage = isImageDataUrl(settings.backgroundImage) ? settings.backgroundImage : null;
   const lastExport = settings && state.data.meta && state.data.meta.lastExportAt;
 
   return `
@@ -54,6 +56,23 @@ export function render(state, ctx = {}) {
         <div class="segmented">
           ${[['auto', '跟随系统'], ['light', '浅色'], ['dark', '深色']].map(([value, label]) => `
             <button type="button" class="${settings.theme === value ? 'active' : ''}" data-action="theme" data-value="${value}">${label}</button>`).join('')}
+        </div>
+      </section>
+
+      <section class="card pad">
+        <div class="card-title">
+          <h3>背景图</h3>
+          ${bgImage ? '<span class="badge ok">已设置</span>' : '<span class="text-xs dim">未设置</span>'}
+        </div>
+        <div class="row wrap">
+          <button class="btn" type="button" data-action="pick-bg">选择图片</button>
+          ${bgImage ? '<button class="btn danger" type="button" data-action="clear-bg">移除背景</button>' : ''}
+        </div>
+        ${bgImage ? `<div class="bg-preview" style="background-image:url('${bgImage}')"></div>` : ''}
+        <div class="field" style="margin-top:12px;max-width:380px">
+          <label>遮罩暗度 <span id="dim-val">${clampDim(settings.backgroundDim)}%</span></label>
+          <input class="range" type="range" min="0" max="80" step="5" value="${clampDim(settings.backgroundDim)}" data-change="backgroundDim">
+          <span class="hint">图片会裁剪铺满屏幕，暗一点文字更清楚。</span>
         </div>
       </section>
 
@@ -334,6 +353,72 @@ async function clearAll(store) {
   toast('数据已清空');
 }
 
+// ---------- 背景图 ----------
+
+const MAX_SOURCE_BYTES = 30 * 1024 * 1024;
+const MAX_STORED_CHARS = 3.8 * 1024 * 1024;
+
+/** 把图片缩到 1600px 宽以内并转成 JPEG，控制数据体积 */
+export function compressImage(file, maxWidth = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxWidth / img.width);
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } catch (err) {
+        reject(err);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('图片读取失败'));
+    };
+    img.src = url;
+  });
+}
+
+export function pickBackground(store) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (file.size > MAX_SOURCE_BYTES) {
+      toast('图片太大了，请选 30 MB 以内的', { tone: 'error', duration: 3000 });
+      return;
+    }
+    try {
+      const dataUrl = await compressImage(file);
+      if (dataUrl.length > MAX_STORED_CHARS) {
+        toast('压缩后还是太大，换一张小一点的图片吧', { tone: 'error', duration: 3000 });
+        return;
+      }
+      store.update((d) => { d.data.settings.backgroundImage = dataUrl; });
+      toast('背景图已更新');
+    } catch {
+      toast('这张图片读不出来，换一张试试', { tone: 'error' });
+    }
+  });
+  input.click();
+}
+
+export function clearBackground(store) {
+  store.update((d) => { d.data.settings.backgroundImage = null; });
+  toast('已恢复纯色背景');
+}
+
 export function bind(root, { store, rerender }) {
   root.addEventListener('click', (event) => {
     const el = event.target.closest('[data-action]');
@@ -346,6 +431,8 @@ export function bind(root, { store, rerender }) {
     else if (action === 'edit-slots') openSlotsEditor(store);
     else if (action === 'clear-module') clearModule(store);
     else if (action === 'clear-all') clearAll(store);
+    else if (action === 'pick-bg') pickBackground(store);
+    else if (action === 'clear-bg') clearBackground(store);
     else if (action === 'theme') {
       const value = el.dataset.value;
       document.documentElement.dataset.theme = value;
@@ -353,9 +440,20 @@ export function bind(root, { store, rerender }) {
     }
   });
 
+  root.addEventListener('input', (event) => {
+    const el = event.target.closest('[data-change="backgroundDim"]');
+    if (!el) return;
+    const value = clampDim(el.value);
+    store.update((d) => { d.data.settings.backgroundDim = value; }, { notify: false });
+    applyBackground(store.state.data.settings);
+    const label = root.querySelector('#dim-val');
+    if (label) label.textContent = `${value}%`;
+  });
+
   root.addEventListener('change', (event) => {
     const el = event.target.closest('[data-change]');
     if (!el) return;
+    if (el.dataset.change === 'backgroundDim') return;
     const key = el.dataset.change;
     const value = key === 'weekStart' ? Number(el.value) : el.value;
     store.update((d) => {

@@ -7,6 +7,7 @@ import { icon, esc, uid } from './core/html.js';
 import { timerElapsed } from './core/calc.js';
 import { todayStr } from './core/date.js';
 import { openQuickAdd } from './ui/quick-add.js';
+import { applyTheme, applyBackground } from './ui/theme.js';
 import * as home from './views/home.js';
 import * as classes from './views/classes.js';
 import * as todos from './views/todos.js';
@@ -58,6 +59,13 @@ const VIEWS = {
 };
 
 const app = document.getElementById('app');
+
+// 背景图层：铺在整个应用下面，随设置更新
+const bgLayer = document.createElement('div');
+bgLayer.id = 'app-bg';
+bgLayer.className = 'app-bg';
+bgLayer.setAttribute('aria-hidden', 'true');
+document.body.insertBefore(bgLayer, document.body.firstChild);
 
 function navLink(item) {
   return `<a href="#/${item.name}" data-nav="${item.name}">
@@ -139,10 +147,6 @@ function setActive(name) {
   });
 }
 
-function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme || 'auto';
-}
-
 function renderRoute(name) {
   currentRoute = name;
   const item = NAV.find((n) => n.name === name) || NAV[0];
@@ -185,6 +189,7 @@ const router = createRouter({
 
 store.subscribe((state) => {
   applyTheme(state.data.settings.theme);
+  applyBackground(state.data.settings);
   renderRoute(currentRoute);
 });
 
@@ -226,6 +231,7 @@ async function boot() {
   try {
     const db = await api.getDb();
     applyTheme(db.data.settings.theme);
+    applyBackground(db.data.settings);
     const recovered = recoverRunningTimer(db);
     store.init(db);
     if (recovered) {

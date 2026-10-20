@@ -2,7 +2,24 @@
 
 .app { min-height: 100dvh; }
 
+/* 背景图层：铺满视口，图片自适应裁剪 */
+.app-bg {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transition: opacity .5s ease;
+}
+.app-bg.show { opacity: 1; }
+.app-bg::after {
+  content: "";
+  position: absolute; inset: 0;
+  background: rgba(10, 14, 22, var(--bg-dim, .35));
+}
+
 .shell {
+  position: relative; z-index: 1;
   display: grid;
   grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 100dvh;
@@ -14,10 +31,11 @@
   height: 100dvh; display: flex; flex-direction: column;
   padding: var(--space-4) var(--space-3);
   background: var(--bg-elev); border-right: 1px solid var(--line);
+  gap: 6px;
 }
 .brand {
   display: flex; align-items: center; gap: 10px;
-  padding: 4px 8px var(--space-4);
+  padding: 4px 8px var(--space-3);
 }
 .brand-mark {
   width: 34px; height: 34px; border-radius: 10px;
@@ -27,17 +45,33 @@
 .brand-name { font-weight: 700; font-size: 15px; line-height: 1.2; }
 .brand-sub { font-size: 11px; color: var(--text-3); }
 
-.nav { display: flex; flex-direction: column; gap: 2px; overflow: auto; }
+/* 导航均匀占满侧栏剩余高度 */
+.nav {
+  flex: 1; min-height: 0;
+  display: grid; grid-auto-rows: 1fr; align-content: stretch;
+  gap: 4px; padding: 4px 0;
+}
 .nav a {
+  position: relative;
   display: flex; align-items: center; gap: 10px;
-  padding: 9px 10px; border-radius: 10px;
+  padding: 0 12px; border-radius: 12px;
   color: var(--text-2); font-size: 14px;
+  transition: background .16s ease, color .16s ease, transform .16s ease;
+}
+.nav a::before {
+  content: ""; position: absolute; left: 0; top: 22%; bottom: 22%; width: 3px;
+  border-radius: 99px; background: transparent; transition: background .16s ease;
 }
 .nav a:hover { background: var(--bg-soft); color: var(--text); }
+.nav a:hover .icon { transform: translateX(1px); }
 .nav a.active { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
-.nav .icon { width: 20px; text-align: center; font-size: 16px; }
+.nav a.active::before { background: var(--brand); }
+.nav .icon {
+  width: 20px; display: grid; place-items: center; font-size: 16px;
+  transition: transform .16s ease;
+}
 
-.sidebar-foot { margin-top: auto; padding: var(--space-3) 8px 0; border-top: 1px solid var(--line); }
+.sidebar-foot { padding: var(--space-2) 8px 0; border-top: 1px solid var(--line); }
 
 /* ---------- 主区 ---------- */
 .main { min-width: 0; display: flex; flex-direction: column; }
