@@ -1,7 +1,8 @@
-import { esc } from '../core/html.js';
+import { esc, uid } from '../core/html.js';
 import { api } from '../api.js';
 import { dataOverview, dataCounts } from '../core/calc.js';
-import { applyBackground, clampDim, isImageDataUrl } from '../ui/theme.js';
+import { coursesToCsv, parseCoursesCsv } from '../core/csv.js';
+import { applyBackground, clampDim, clampBlur, isImageDataUrl } from '../ui/theme.js';
 import { TRASH_KIND_LABELS, insertItem } from '../core/trash.js';
 import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
@@ -53,6 +54,15 @@ export function render(state, ctx = {}) {
       </section>
 
       <section class="card pad">
+        <div class="card-title"><h3>课程表 CSV</h3><span class="text-xs dim">${(state.data.courses || []).length} 门课</span></div>
+        <div class="row wrap">
+          <button class="btn" type="button" data-action="export-csv">导出课程表</button>
+          <button class="btn" type="button" data-action="import-csv">导入课程表</button>
+        </div>
+        <p class="hint" style="margin-top:8px">表头：课程名、老师、地点、星期、开始节、结束节、起始周、结束周、单双周、颜色、备注。</p>
+      </section>
+
+      <section class="card pad">
         <div class="card-title"><h3>回收站</h3><span class="text-xs dim">${(state.data.trash || []).length} 条</span></div>
         ${(state.data.trash || []).length ? `
           <ul class="list">
@@ -93,6 +103,11 @@ export function render(state, ctx = {}) {
           <label>遮罩暗度 <span id="dim-val">${clampDim(settings.backgroundDim)}%</span></label>
           <input class="range" type="range" min="0" max="80" step="5" value="${clampDim(settings.backgroundDim)}" data-change="backgroundDim">
           <span class="hint">图片会裁剪铺满屏幕，暗一点文字更清楚。</span>
+        </div>
+        <div class="field" style="margin-top:10px;max-width:380px">
+          <label>模糊强度 <span id="blur-val">${clampBlur(settings.backgroundBlur)}px</span></label>
+          <input class="range" type="range" min="0" max="20" step="1" value="${clampBlur(settings.backgroundBlur)}" data-change="backgroundBlur">
+          <span class="hint">糊一点更像壁纸，也更容易看清字。</span>
         </div>
       </section>
 
@@ -481,6 +496,73 @@ export async function clearTrash(store) {
   toast('回收站已清空');
 }
 
+// ---------- 课程表 CSV ----------
+
+export function exportCourses(store) {
+  const csv = coursesToCsv(store.state.data.courses || []);
+  downloadBlob(
+    new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }),
+    `cauc-courses-${new Date().toISOString().slice(0, 10)}.csv`
+  );
+  toast('课程表已导出');
+}
+
+function chooseCsvMode(count) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    const { close } = openModal({
+      title: '导入课程表',
+      body: `<p class="text-sm">读到 ${count} 门课程。追加会保留现有课表，覆盖会先清空现有课程。</p>`,
+      footer: `<button class="btn" type="button" data-cancel>取消</button>
+               <button class="btn" type="button" data-append>追加</button>
+               <button class="btn primary" type="button" data-replace>覆盖</button>`,
+      onClose: () => finish(null),
+      onMount: (mask, { close }) => {
+        mask.querySelector('[data-cancel]').addEventListener('click', () => { finish(null); close(); });
+        mask.querySelector('[data-append]').addEventListener('click', () => { finish('append'); close(); });
+        mask.querySelector('[data-replace]').addEventListener('click', () => { finish('replace'); close(); });
+      }
+    });
+  });
+}
+
+export function importCourses(store) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.csv,text/csv';
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    let result;
+    try {
+      result = parseCoursesCsv(await file.text());
+    } catch {
+      toast('这个 CSV 读不出来', { tone: 'error' });
+      return;
+    }
+    if (!result.courses.length) {
+      toast(result.errors[0] || '没有可导入的课程', { tone: 'error', duration: 3500 });
+      return;
+    }
+    if (result.errors.length) {
+      toast(`有 ${result.errors.length} 行被跳过：${result.errors[0]}`, { duration: 4000 });
+    }
+    const mode = await chooseCsvMode(result.courses.length);
+    if (!mode) return;
+    store.update((d) => {
+      const withIds = result.courses.map((course) => ({ id: uid('c'), ...course }));
+      d.data.courses = mode === 'replace' ? withIds : [...(d.data.courses || []), ...withIds];
+    });
+    toast(`已导入 ${result.courses.length} 门课程`);
+  });
+  input.click();
+}
+
 export function bind(root, { store, rerender }) {
   root.addEventListener('click', (event) => {
     const el = event.target.closest('[data-action]');
@@ -498,6 +580,8 @@ export function bind(root, { store, rerender }) {
     else if (action === 'trash-restore') restoreTrash(store, el.dataset.id);
     else if (action === 'trash-delete') deleteTrash(store, el.dataset.id);
     else if (action === 'trash-clear') clearTrash(store);
+    else if (action === 'export-csv') exportCourses(store);
+    else if (action === 'import-csv') importCourses(store);
     else if (action === 'theme') {
       const value = el.dataset.value;
       document.documentElement.dataset.theme = value;
@@ -506,19 +590,30 @@ export function bind(root, { store, rerender }) {
   });
 
   root.addEventListener('input', (event) => {
-    const el = event.target.closest('[data-change="backgroundDim"]');
-    if (!el) return;
-    const value = clampDim(el.value);
-    store.update((d) => { d.data.settings.backgroundDim = value; }, { notify: false });
-    applyBackground(store.state.data.settings);
-    const label = root.querySelector('#dim-val');
-    if (label) label.textContent = `${value}%`;
+    const dimEl = event.target.closest('[data-change="backgroundDim"]');
+    if (dimEl) {
+      const value = clampDim(dimEl.value);
+      store.update((d) => { d.data.settings.backgroundDim = value; }, { notify: false });
+      applyBackground(store.state.data.settings);
+      const label = root.querySelector('#dim-val');
+      if (label) label.textContent = `${value}%`;
+      return;
+    }
+
+    const blurEl = event.target.closest('[data-change="backgroundBlur"]');
+    if (blurEl) {
+      const value = clampBlur(blurEl.value);
+      store.update((d) => { d.data.settings.backgroundBlur = value; }, { notify: false });
+      applyBackground(store.state.data.settings);
+      const label = root.querySelector('#blur-val');
+      if (label) label.textContent = `${value}px`;
+    }
   });
 
   root.addEventListener('change', (event) => {
     const el = event.target.closest('[data-change]');
     if (!el) return;
-    if (el.dataset.change === 'backgroundDim') return;
+    if (el.dataset.change === 'backgroundDim' || el.dataset.change === 'backgroundBlur') return;
     const key = el.dataset.change;
     const value = key === 'weekStart' ? Number(el.value) : el.value;
     store.update((d) => {

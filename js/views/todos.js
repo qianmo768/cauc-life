@@ -363,8 +363,7 @@ export function bind(root, { store, rerender }) {
     });
   });
 
-  root.querySelectorAll('.todo-item[draggable="true"]').forEach((li) => {
-    li.addEventListener('dragstart', (event) => {
+  root.querySelectorAll('.todo-item[draggable="true"]').forEach((li) => {    li.addEventListener('dragstart', (event) => {
       dragId = li.dataset.id;
       li.classList.add('dragging');
       event.dataTransfer.setData('text/plain', dragId);
@@ -388,4 +387,38 @@ export function bind(root, { store, rerender }) {
       dragId = null;
     });
   });
+
+  // 手机左滑删除
+  if (!selectMode) {
+    root.querySelectorAll('.todo-item').forEach((li) => {
+      let startX = 0;
+      let dx = 0;
+      let swiping = false;
+
+      li.addEventListener('touchstart', (event) => {
+        startX = event.touches[0].clientX;
+        dx = 0;
+        swiping = true;
+        li.classList.add('swiping');
+      }, { passive: true });
+
+      li.addEventListener('touchmove', (event) => {
+        if (!swiping) return;
+        dx = Math.min(0, event.touches[0].clientX - startX);
+        li.style.transform = `translateX(${Math.max(dx, -96)}px)`;
+      }, { passive: true });
+
+      li.addEventListener('touchend', () => {
+        if (!swiping) return;
+        swiping = false;
+        li.classList.remove('swiping');
+        li.style.transform = '';
+        if (dx < -60) {
+          const todo = store.state.data.todos.find((t) => t.id === li.dataset.id);
+          if (todo) deleteTodo(store, rerender, todo);
+        }
+        dx = 0;
+      });
+    });
+  }
 }

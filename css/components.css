@@ -525,6 +525,8 @@ body.has-bg .drawer {
 /* ---------- 批量操作 ---------- */
 .batch-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .todo-item.selected { background: var(--brand-soft); border-radius: 8px; }
+.todo-item { touch-action: pan-y; }
+.todo-item.swiping { transition: none; }
 
 @media (max-width: 768px) {
   .topbar-search kbd { display: none; }
