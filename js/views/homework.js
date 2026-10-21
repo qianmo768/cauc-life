@@ -301,14 +301,28 @@ function openPasteImport(store, rerender) {
     wide: true,
     body: `
       <div class="stack">
-        <p class="hint">在学习通里打开作业详情，Ctrl+A 全选复制，粘贴到下面。只会读取作业名和「作答时间」，其它内容不保存。</p>
+        <p class="hint">粘贴学习通作业详情后，会自动填好作业名和时间；也可以不粘贴，直接手选时间。日期默认按今天算。</p>
         <div class="field">
           <label>课程</label>
           <select class="select" name="course">${options}</select>
         </div>
         <div class="field">
-          <label>详情页文字</label>
-          <textarea class="textarea" name="text" style="min-height:140px" placeholder="作业20261020 (2.1)
+          <label>作业名</label>
+          <input class="input" name="title" placeholder="粘贴后自动填入，也可以自己写" autocomplete="off">
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label>开始时间</label>
+            <input class="input" type="datetime-local" name="startAt">
+          </div>
+          <div class="field">
+            <label>截止时间</label>
+            <input class="input" type="datetime-local" name="dueAt">
+          </div>
+        </div>
+        <div class="field">
+          <label>详情页文字（可选）</label>
+          <textarea class="textarea" name="text" style="min-height:110px" placeholder="作业20261020 (2.1)
 作答时间：10-20 10:52 至 10-22 13:30"></textarea>
         </div>
         <p class="err hidden" data-error></p>
@@ -317,35 +331,65 @@ function openPasteImport(store, rerender) {
     footer: `<button class="btn" type="button" data-cancel>取消</button>
              <button class="btn primary" type="button" data-save>解析并导入</button>`,
     onMount: (mask, { close }) => {
+      const titleInput = mask.querySelector('[name="title"]');
+      const startInput = mask.querySelector('[name="startAt"]');
+      const dueInput = mask.querySelector('[name="dueAt"]');
+      const textInput = mask.querySelector('[name="text"]');
+      const err = mask.querySelector('[data-error]');
+      const error = (message) => {
+        err.textContent = message;
+        err.classList.remove('hidden');
+      };
+      const clearError = () => err.classList.add('hidden');
+
+      // 默认按当前日期：现在开始，今天 23:59 截止
+      const now = new Date();
+      startInput.value = toLocalInput(now.toISOString());
+      const dueDefault = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59);
+      if (dueDefault <= now) dueDefault.setDate(dueDefault.getDate() + 1);
+      dueInput.value = toLocalInput(dueDefault.toISOString());
+
+      let autoTitle = '';
+      titleInput.addEventListener('input', () => { autoTitle = ''; });
+
+      textInput.addEventListener('input', () => {
+        const parsed = parseAssignmentText(textInput.value);
+        if (parsed.title && (!titleInput.value.trim() || titleInput.value === autoTitle)) {
+          titleInput.value = parsed.title;
+          autoTitle = parsed.title;
+        }
+        if (parsed.startAt) startInput.value = toLocalInput(parsed.startAt);
+        if (parsed.dueAt) dueInput.value = toLocalInput(parsed.dueAt);
+        if (parsed.matched) clearError();
+      });
+
       mask.querySelector('[data-cancel]').addEventListener('click', close);
       mask.querySelector('[data-save]').addEventListener('click', () => {
-        const err = mask.querySelector('[data-error]');
-        const error = (message) => {
-          err.textContent = message;
-          err.classList.remove('hidden');
-        };
-
+        const parsed = parseAssignmentText(textInput.value);
         const courseName = mask.querySelector('[name="course"]').value || '未分类';
-        const parsed = parseAssignmentText(mask.querySelector('[name="text"]').value);
+        const title = titleInput.value.trim() || parsed.title;
+        const startAt = fromLocalInput(startInput.value);
+        const dueAt = fromLocalInput(dueInput.value);
 
-        if (!parsed.title) { error('没认出作业名，请把详情页顶部的标题一起复制'); return; }
-        if (!parsed.matched) { error('没找到「作答时间」，请把含日期的整行一起复制'); return; }
+        if (!title) { error('写个作业名，或者把详情页文字粘进来'); return; }
+        if (!dueAt) { error('选一下截止时间'); return; }
+        if (startAt && new Date(dueAt) <= new Date(startAt)) { error('截止时间要晚于开始时间'); return; }
 
         store.update((d) => {
           const list = d.data.assignments || [];
-          const existing = list.find((item) => item.courseName === courseName && item.title === parsed.title);
+          const existing = list.find((item) => item.courseName === courseName && item.title === title);
           if (existing) {
-            existing.startAt = parsed.startAt;
-            existing.dueAt = parsed.dueAt;
+            existing.startAt = startAt;
+            existing.dueAt = dueAt;
             existing.updatedAt = new Date().toISOString();
           } else {
             list.push({
               id: uid('a'),
               courseName,
               courseId: null,
-              title: parsed.title,
-              startAt: parsed.startAt,
-              dueAt: parsed.dueAt,
+              title,
+              startAt,
+              dueAt,
               status: 'todo',
               submittedAt: null,
               note: '',
