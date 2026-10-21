@@ -39,6 +39,12 @@ export const api = {
   async uploadFile(name, dataUrl) {
     return (await request('/api/upload', jsonInit('POST', { name, dataUrl }))).json();
   },
+  async lookupCover(name) {
+    return (await request(`/api/cover?name=${encodeURIComponent(name)}`)).json();
+  },
+  async saveNow() {
+    return (await request('/api/save', { method: 'POST' })).json();
+  },
   exportUrl() {
     return '/api/export';
   },

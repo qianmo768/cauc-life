@@ -103,6 +103,7 @@ app.innerHTML = `
           <div class="sub" id="page-sub"></div>
         </div>
         <div class="row" style="gap:8px">
+          <button class="btn ghost sm" type="button" data-action="save-now" title="立即保存（Ctrl+S）">保存</button>
           <button class="btn ghost icon sm reminder-btn" type="button" data-action="open-reminders" title="提醒">
             <span aria-hidden="true">🔔</span><span class="reminder-count" id="reminder-count"></span>
           </button>
@@ -220,8 +221,25 @@ store.subscribe((state) => {
   renderRoute(currentRoute);
 });
 
+// 手动全局保存：先把待写入的改动落盘，再存一份快照
+async function manualSave() {
+  try {
+    await store.flush();
+    const result = await api.saveNow();
+    toast(`已保存 · ${result.name}`);
+  } catch (err) {
+    toast(`保存失败：${err.message}`, { tone: 'error', duration: 4000 });
+  }
+}
+
 // 全局快速添加与搜索
 document.addEventListener('click', (event) => {
+  const save = event.target.closest('[data-action="save-now"]');
+  if (save) {
+    event.preventDefault();
+    manualSave();
+    return;
+  }
   const more = event.target.closest('[data-action="open-more"]');
   if (more) {
     event.preventDefault();
@@ -256,6 +274,12 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     closeModal();
     closeDrawer();
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    manualSave();
     return;
   }
 

@@ -1,4 +1,5 @@
 import { esc, uid } from '../core/html.js';
+import { api } from '../api.js';
 import { todayStr, weekdayName, weekdayIndex, monthKeyOf, fmtDuration } from '../core/date.js';
 import {
   funWeek, funPlanForDate, timerElapsed, fmtSeconds, funMonthTotal,
@@ -57,6 +58,7 @@ export function render(state, ctx = {}) {
   const plan = state.data.fun.plan || [];
   const records = sortFunRecords(state.data.fun.records).slice(0, 20);
   const wishlist = state.data.fun.wishlist || [];
+  const games = state.data.fun.games || [];
 
   return `
     <div class="stack">
@@ -75,6 +77,28 @@ export function render(state, ctx = {}) {
       <section class="card pad">
         <div class="card-title"><h3>计时器</h3><span class="text-xs dim">刷新页面会自动结束并记录</span></div>
         ${renderTimer(state)}
+      </section>
+
+      <section class="card pad">
+        <div class="card-title"><h3>游戏封面</h3><span class="text-xs dim">${games.length} 个</span></div>
+        <form class="game-add" data-form="game">
+          <input class="input" name="name" placeholder="输入游戏名，自动找官方封面" autocomplete="off" required>
+          <button class="btn primary sm" type="submit">添加</button>
+        </form>
+        ${games.length ? `
+          <div class="game-grid">
+            ${games.map((game) => `
+              <div class="game-card" data-id="${esc(game.id)}">
+                <div class="game-cover" ${game.cover ? `style="background-image:url('${esc(game.cover)}')"` : ''}>
+                  ${game.cover ? '' : `<span class="game-cover-ph">${esc(game.name.slice(0, 2))}</span>`}
+                </div>
+                <div class="game-name" title="${esc(game.name)}">${esc(game.name)}</div>
+                <div class="row" style="gap:2px">
+                  <button class="btn ghost sm" type="button" data-action="game-cover" data-id="${esc(game.id)}">换封面</button>
+                  <button class="btn ghost sm" type="button" data-action="game-del" data-id="${esc(game.id)}">删除</button>
+                </div>
+              </div>`).join('')}
+          </div>` : '<p class="text-sm dim">添加一个游戏，输入名字就会自动找封面（需要联网）。</p>'}
       </section>
 
       <div class="fun-grid">
@@ -296,6 +320,40 @@ export function bind(root, { store, rerender }) {
       return;
     }
 
+    if (action === 'game-del') {
+      store.update((d) => {
+        d.data.fun.games = (d.data.fun.games || []).filter((g) => g.id !== el.dataset.id);
+      });
+      return;
+    }
+
+    if (action === 'game-cover') {
+      const id = el.dataset.id;
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*';
+      input.addEventListener('change', async () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        try {
+          const dataUrl = await readAsDataUrl(file);
+          const result = await api.uploadFile(file.name, dataUrl);
+          store.update((d) => {
+            const game = (d.data.fun.games || []).find((g) => g.id === id);
+            if (game) {
+              game.cover = result.file.url;
+              game.customCover = true;
+            }
+          });
+          toast('封面已更新');
+        } catch (err) {
+          toast(`换封面失败：${err.message}`, { tone: 'error' });
+        }
+      });
+      input.click();
+      return;
+    }
+
     if (action === 'wish-del') {
       store.update((d) => {
         d.data.fun.wishlist = d.data.fun.wishlist.filter((w) => w.id !== el.dataset.id);
@@ -344,4 +402,40 @@ export function bind(root, { store, rerender }) {
       });
     });
   }
+
+  const gameForm = root.querySelector('[data-form="game"]');
+  if (gameForm) {
+    gameForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const name = gameForm.elements.name.value.trim();
+      if (!name) return;
+      const id = uid('g');
+      store.update((d) => {
+        d.data.fun.games = [...(d.data.fun.games || []), { id, name, cover: null, customCover: false }];
+      });
+      gameForm.elements.name.value = '';
+      try {
+        const result = await api.lookupCover(name);
+        if (result.ok && result.cover) {
+          store.update((d) => {
+            const game = (d.data.fun.games || []).find((g) => g.id === id);
+            if (game && !game.customCover && !game.cover) game.cover = result.cover;
+          });
+        } else {
+          toast(result.error || '没找到封面，可以手动换一张', { duration: 3000 });
+        }
+      } catch {
+        toast('暂时连不上封面服务，可以手动换封面', { duration: 3000 });
+      }
+    });
+  }
+}
+
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
 }
