@@ -4,6 +4,7 @@ import { groupTodos, reorderTodos, todoDueLabel } from '../core/calc.js';
 import { openModal } from '../ui/modal.js';
 import { showUndo } from '../ui/undo.js';
 import { toast } from '../ui/toast.js';
+import { makeTrashEntry } from '../core/trash.js';
 
 let filter = 'all';
 let dragId = null;
@@ -211,10 +212,17 @@ function openTodoForm(store, rerender, existing) {
 }
 
 function deleteTodo(store, rerender, todo) {
-  store.update((d) => { d.data.todos = d.data.todos.filter((t) => t.id !== todo.id); });
+  const entry = makeTrashEntry('todo', todo, todo.title);
+  store.update((d) => {
+    d.data.todos = d.data.todos.filter((t) => t.id !== todo.id);
+    d.data.trash = [...(d.data.trash || []), entry];
+  });
   rerender();
-  showUndo('已删除一条待办', () => {
-    store.update((d) => { d.data.todos.push(todo); });
+  showUndo('已移入回收站', () => {
+    store.update((d) => {
+      d.data.todos.push(todo);
+      d.data.trash = (d.data.trash || []).filter((t) => t.id !== entry.id);
+    });
     rerender();
   });
 }
@@ -281,14 +289,20 @@ export function bind(root, { store, rerender }) {
     if (action === 'batch-del') {
       if (!selected.size) return;
       const removed = store.state.data.todos.filter((t) => selected.has(t.id));
+      const entries = removed.map((t) => makeTrashEntry('todo', t, t.title));
       store.update((d) => {
         d.data.todos = d.data.todos.filter((t) => !selected.has(t.id));
+        d.data.trash = [...(d.data.trash || []), ...entries];
       });
       selected.clear();
       selectMode = false;
       rerender();
       showUndo(`已删除 ${removed.length} 条待办`, () => {
-        store.update((d) => { d.data.todos.push(...removed); });
+        store.update((d) => {
+          d.data.todos.push(...removed);
+          const ids = new Set(entries.map((e) => e.id));
+          d.data.trash = (d.data.trash || []).filter((e) => !ids.has(e.id));
+        });
         rerender();
       });
       return;

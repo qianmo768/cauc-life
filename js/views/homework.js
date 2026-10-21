@@ -7,6 +7,7 @@ import {
 import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
+import { makeTrashEntry } from '../core/trash.js';
 
 let viewMode = 'due';
 let statusFilter = 'all';
@@ -238,9 +239,13 @@ export function bind(root, { store, rerender }) {
         danger: true
       });
       if (!ok) return;
-      store.update((d) => { d.data.assignments = d.data.assignments.filter((a) => a.id !== id); });
+      const entry = makeTrashEntry('assignment', item, `${item.courseName || '未分类'} · ${item.title}`);
+      store.update((d) => {
+        d.data.assignments = d.data.assignments.filter((a) => a.id !== id);
+        d.data.trash = [...(d.data.trash || []), entry];
+      });
       rerender();
-      toast('作业已删除');
+      toast('作业已移入回收站');
     }
   });
 }

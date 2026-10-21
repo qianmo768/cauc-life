@@ -2,6 +2,7 @@ import { esc } from '../core/html.js';
 import { api } from '../api.js';
 import { dataOverview, dataCounts } from '../core/calc.js';
 import { applyBackground, clampDim, isImageDataUrl } from '../ui/theme.js';
+import { TRASH_KIND_LABELS, insertItem } from '../core/trash.js';
 import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
@@ -49,6 +50,25 @@ export function render(state, ctx = {}) {
           <button class="btn" type="button" data-action="restore">从自动快照恢复</button>
         </div>
         <p class="hint" style="margin-top:8px">数据保存在本机，建议每周导出一次。</p>
+      </section>
+
+      <section class="card pad">
+        <div class="card-title"><h3>回收站</h3><span class="text-xs dim">${(state.data.trash || []).length} 条</span></div>
+        ${(state.data.trash || []).length ? `
+          <ul class="list">
+            ${state.data.trash.slice().reverse().slice(0, 20).map((entry) => `
+              <li class="list-item">
+                <span class="tag">${esc(TRASH_KIND_LABELS[entry.kind] || '其他')}</span>
+                <span class="grow">${esc(entry.label)}</span>
+                <span class="text-xs dim">${esc(String(entry.deletedAt).slice(0, 10))}</span>
+                <button class="btn sm" type="button" data-action="trash-restore" data-id="${esc(entry.id)}">恢复</button>
+                <button class="btn sm ghost" type="button" data-action="trash-delete" data-id="${esc(entry.id)}">彻底删除</button>
+              </li>`).join('')}
+          </ul>
+          <div class="row" style="margin-top:8px">
+            <button class="btn sm danger" type="button" data-action="trash-clear">清空回收站</button>
+          </div>
+        ` : '<p class="text-sm dim">回收站是空的。删除的待办、作业、花销和娱乐记录会在这里保留 30 天。</p>'}
       </section>
 
       <section class="card pad">
@@ -419,6 +439,48 @@ export function clearBackground(store) {
   toast('已恢复纯色背景');
 }
 
+// ---------- 回收站 ----------
+
+export function restoreTrash(store, id) {
+  const entry = (store.state.data.trash || []).find((t) => t.id === id);
+  if (!entry) return;
+  store.update((d) => {
+    insertItem(d.data, entry.kind, entry.item);
+    d.data.trash = (d.data.trash || []).filter((t) => t.id !== id);
+  });
+  toast('已恢复');
+}
+
+export async function deleteTrash(store, id) {
+  const entry = (store.state.data.trash || []).find((t) => t.id === id);
+  if (!entry) return;
+  const ok = await confirmDialog({
+    title: '彻底删除',
+    message: `「${entry.label}」将无法恢复，确定吗？`,
+    confirmText: '彻底删除',
+    danger: true
+  });
+  if (!ok) return;
+  store.update((d) => {
+    d.data.trash = (d.data.trash || []).filter((t) => t.id !== id);
+  });
+  toast('已彻底删除');
+}
+
+export async function clearTrash(store) {
+  const count = (store.state.data.trash || []).length;
+  if (!count) return;
+  const ok = await confirmDialog({
+    title: '清空回收站',
+    message: `回收站里的 ${count} 条内容将被彻底删除，无法恢复。`,
+    confirmText: '清空',
+    danger: true
+  });
+  if (!ok) return;
+  store.update((d) => { d.data.trash = []; });
+  toast('回收站已清空');
+}
+
 export function bind(root, { store, rerender }) {
   root.addEventListener('click', (event) => {
     const el = event.target.closest('[data-action]');
@@ -433,6 +495,9 @@ export function bind(root, { store, rerender }) {
     else if (action === 'clear-all') clearAll(store);
     else if (action === 'pick-bg') pickBackground(store);
     else if (action === 'clear-bg') clearBackground(store);
+    else if (action === 'trash-restore') restoreTrash(store, el.dataset.id);
+    else if (action === 'trash-delete') deleteTrash(store, el.dataset.id);
+    else if (action === 'trash-clear') clearTrash(store);
     else if (action === 'theme') {
       const value = el.dataset.value;
       document.documentElement.dataset.theme = value;

@@ -70,8 +70,24 @@ export function render(state, ctx = {}) {
   const doneCount = todos.filter((t) => t.done).length;
   const visibleTodos = todos.slice(0, 5);
 
+  const lastExportAt = state.data.meta && state.data.meta.lastExportAt;
+  const daysSinceExport = lastExportAt
+    ? Math.max(0, Math.floor((Date.now() - Date.parse(lastExportAt)) / 86400000))
+    : null;
+  const needBackup = !lastExportAt || daysSinceExport >= 7;
+
   return `
     <div class="stack">
+      ${needBackup ? `
+        <section class="card pad backup-banner">
+          <div class="row-between wrap">
+            <div>
+              <div class="strong">该备份了</div>
+              <div class="text-xs dim">${lastExportAt ? `上次导出在 ${daysSinceExport} 天前` : '还没有导出过备份'}</div>
+            </div>
+            <a class="btn sm" href="#/settings">去备份</a>
+          </div>
+        </section>` : ''}
       <section class="card pad home-hero">
         <div class="row-between wrap">
           <div>

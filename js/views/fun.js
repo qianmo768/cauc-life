@@ -7,6 +7,7 @@ import {
 import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
+import { makeTrashEntry } from '../core/trash.js';
 
 const TYPES = { game: '游戏', video: '影视', other: '其他' };
 
@@ -313,10 +314,12 @@ export function bind(root, { store, rerender }) {
         danger: true
       });
       if (!ok) return;
+      const entry = makeTrashEntry('fun', record, record.name);
       store.update((d) => {
         d.data.fun.records = d.data.fun.records.filter((r) => r.id !== id);
+        d.data.trash = [...(d.data.trash || []), entry];
       });
-      toast('已删除');
+      toast('已移入回收站');
     }
   });
 

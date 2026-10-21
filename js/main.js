@@ -10,6 +10,7 @@ import { timerElapsed } from './core/calc.js';
 import { todayStr } from './core/date.js';
 import { openQuickAdd } from './ui/quick-add.js';
 import { applyTheme, applyBackground } from './ui/theme.js';
+import { purgeTrash } from './core/trash.js';
 import * as home from './views/home.js';
 import * as classes from './views/classes.js';
 import * as todos from './views/todos.js';
@@ -258,8 +259,7 @@ document.addEventListener('keydown', (event) => {
 });
 
 // 上次关页面时计时器还在跑：补一条记录并清空
-function recoverRunningTimer(db) {
-  const timer = db.data.fun && db.data.fun.timer;
+function recoverRunningTimer(db) {  const timer = db.data.fun && db.data.fun.timer;
   if (!timer || !timer.running) return false;
   const seconds = timerElapsed(timer);
   const minutes = Math.max(1, Math.round(seconds / 60));
@@ -274,17 +274,25 @@ function recoverRunningTimer(db) {
   return true;
 }
 
+// 回收站只保留 30 天
+function purgeOldTrash(db) {
+  const before = (db.data.trash || []).length;
+  db.data.trash = purgeTrash(db.data.trash);
+  return db.data.trash.length !== before;
+}
+
 async function boot() {
   try {
     const db = await api.getDb();
     applyTheme(db.data.settings.theme);
     applyBackground(db.data.settings);
     const recovered = recoverRunningTimer(db);
+    const purged = purgeOldTrash(db);
     store.init(db);
-    if (recovered) {
+    if (recovered || purged) {
       store.update(() => {}, { notify: false });
       await store.flush().catch(() => {});
-      toast('上次的计时已自动记下');
+      if (recovered) toast('上次的计时已自动记下');
     }
     router.start();
   } catch (err) {

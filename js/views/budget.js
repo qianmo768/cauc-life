@@ -4,6 +4,7 @@ import { budgetBreakdown, expensesByDate, expenseTotals, BUDGET_CATEGORIES, budg
 import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
+import { makeTrashEntry } from '../core/trash.js';
 
 let monthKey = monthKeyOf(todayStr());
 
@@ -255,11 +256,13 @@ export function bind(root, { store, rerender }) {
         danger: true
       });
       if (!ok) return;
+      const entry = makeTrashEntry('expense', item, `${item.category || '其他'} ${fmtMoney(item.amount)}`);
       store.update((d) => {
         d.data.budget.expenses = d.data.budget.expenses.filter((e) => e.id !== id);
+        d.data.trash = [...(d.data.trash || []), entry];
       });
       rerender();
-      toast('已删除');
+      toast('已移入回收站');
     }
   });
 
