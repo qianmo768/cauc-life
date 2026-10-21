@@ -389,6 +389,8 @@ details[open] > summary::before { content: "▾"; }
 .hw-meta.warn { color: var(--warn); font-weight: 600; }
 .hw-meta.danger { color: var(--danger); font-weight: 600; }
 .hw-meta.muted { color: var(--text-3); }
+.hw-grade { font-size: 12px; color: var(--ok); font-weight: 600; }
+.hw-grade strong { font-size: 14px; }
 .hw-actions { display: flex; gap: 6px; margin-top: auto; padding-top: 6px; flex-wrap: wrap; }
 
 /* ---------- 健身 ---------- */
@@ -570,6 +572,15 @@ body.has-bg .drawer {
 .todo-item.selected { background: var(--brand-soft); border-radius: 8px; }
 .todo-item { touch-action: pan-y; }
 .todo-item.swiping { transition: none; }
+
+.subtask-box { margin-top: 6px; }
+.subtask-box summary { cursor: pointer; font-size: 12px; color: var(--text-3); list-style: none; }
+.subtask-box summary::-webkit-details-marker { display: none; }
+.subtask-box summary::before { content: "▸ "; }
+.subtask-box[open] summary::before { content: "▾ "; }
+.subtask-list { margin-top: 4px; display: flex; flex-direction: column; gap: 2px; }
+.subtask-list li.done span { text-decoration: line-through; color: var(--text-3); }
+.subtask-list input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--brand); }
 
 @media (max-width: 768px) {
   .search-pill kbd { display: none; }

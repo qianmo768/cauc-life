@@ -2,7 +2,7 @@ import { esc } from '../core/html.js';
 import { fmtMoney, fmtDuration, todayStr, monthKeyOf } from '../core/date.js';
 import {
   fitnessWeeklySeries, expenseMonthlySeries, funDailySeries,
-  assignmentMonthStats, fitnessWeek, fitnessStreak
+  assignmentMonthStats, fitnessWeek, fitnessStreak, gradeStats, courseGradeSummary
 } from '../core/calc.js';
 
 function barChart(data, pick, format) {
@@ -32,6 +32,8 @@ export function render(state, ctx = {}) {
   const expenses = expenseMonthlySeries(state, 6);
   const fun = funDailySeries(state, 7);
   const homework = assignmentMonthStats(state, monthKeyOf(today));
+  const grades = gradeStats(state);
+  const courseGrades = courseGradeSummary(state);
   const totalFitness = fitness.reduce((sum, item) => sum + item.count, 0);
   const totalExpense = expenses.reduce((sum, item) => sum + item.total, 0);
   const totalFun = fun.reduce((sum, item) => sum + item.minutes, 0);
@@ -71,6 +73,22 @@ export function render(state, ctx = {}) {
           </div>
           <div class="progress ${homework.percent >= 100 ? 'ok' : ''}"><i style="width:${homework.percent}%"></i></div>
           <p class="hint" style="margin-top:10px">${homework.total ? (homework.percent >= 100 ? '这个月的作业都交完了 🎉' : `还有 ${homework.total - homework.submitted} 项没交`) : '本月还没有登记作业'}</p>
+        </section>
+
+        <section class="card pad">
+          <div class="card-title"><h3>成绩概览</h3><span class="text-xs dim">已录入 ${grades.count} 项</span></div>
+          ${grades.count ? `
+            <div class="row" style="gap:22px;flex-wrap:wrap">
+              <div class="stat"><span class="value num">${grades.average}</span><span class="label">平均分</span></div>
+              <div class="stat"><span class="value num">${grades.best}</span><span class="label">最高</span></div>
+              <div class="stat"><span class="value num">${grades.worst}</span><span class="label">最低</span></div>
+            </div>
+            <div class="divider"></div>
+            <div class="list">
+              ${courseGrades.map((row) => `
+                <div class="kv"><span>${esc(row.courseName)}</span><span class="num">${row.average} 分 · ${row.count} 项</span></div>`).join('')}
+            </div>
+          ` : '<p class="text-sm dim">还没有录入成绩。在作业的编辑弹层里可以填成绩。</p>'}
         </section>
       </div>
     </div>

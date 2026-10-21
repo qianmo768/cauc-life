@@ -759,3 +759,34 @@ export function assignmentMonthStats(state, monthKey = monthKeyOf(todayStr())) {
   };
 }
 
+// ---------- 成绩 ----------
+
+export function gradeStats(state) {
+  const graded = (state.data.assignments || []).filter(
+    (item) => typeof item.grade === 'number' && Number.isFinite(item.grade)
+  );
+  if (!graded.length) return { count: 0, average: null, best: null, worst: null };
+  const values = graded.map((item) => item.grade);
+  return {
+    count: graded.length,
+    average: Math.round((values.reduce((total, value) => total + value, 0) / values.length) * 10) / 10,
+    best: Math.max(...values),
+    worst: Math.min(...values)
+  };
+}
+
+export function courseGradeSummary(state) {
+  const map = new Map();
+  for (const item of state.data.assignments || []) {
+    if (typeof item.grade !== 'number' || !Number.isFinite(item.grade)) continue;
+    const key = item.courseName || '未分类';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(item.grade);
+  }
+  return [...map.entries()].map(([courseName, values]) => ({
+    courseName,
+    count: values.length,
+    average: Math.round((values.reduce((total, value) => total + value, 0) / values.length) * 10) / 10
+  })).sort((a, b) => b.average - a.average);
+}
+

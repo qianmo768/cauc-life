@@ -32,6 +32,7 @@ function cardHtml(state, item, today) {
       </div>
       <div class="hw-title">${esc(item.title)}</div>
       <div class="hw-meta ${esc(meta.tone)}">${esc(meta.label)}</div>
+      ${typeof item.grade === 'number' ? `<div class="hw-grade">成绩 <strong>${item.grade}</strong> 分</div>` : ''}
       ${item.note ? `<div class="text-xs dim">${esc(item.note)}</div>` : ''}
       <div class="hw-actions">
         <button class="btn sm ${nextAction.cls}" type="button" data-action="${nextAction.action}" data-id="${esc(item.id)}">${nextAction.label}</button>
@@ -131,6 +132,10 @@ function formHtml(state, item = {}) {
             <option value="submitted" ${item.status === 'submitted' ? 'selected' : ''}>已交</option>
           </select>
         </div>
+        <div class="field">
+          <label>成绩（可留空）</label>
+          <input class="input" type="number" name="grade" min="0" max="100" step="0.5" value="${typeof item.grade === 'number' ? item.grade : ''}" placeholder="例如 92">
+        </div>
         <div class="field full">
           <label>备注</label>
           <textarea class="textarea" name="note" style="min-height:70px">${esc(item.note || '')}</textarea>
@@ -172,12 +177,20 @@ function openForm(store, rerender, existing = null) {
         const courseName = isCustom
           ? (form.elements.customName.value.trim() || '未分类')
           : (course ? course.name : '未分类');
+        const rawGrade = form.elements.grade.value.trim();
+        const grade = rawGrade === '' ? null : Number(rawGrade);
+        if (rawGrade !== '' && (!Number.isFinite(grade) || grade < 0 || grade > 100)) {
+          errorEl.textContent = '成绩要在 0–100 之间';
+          errorEl.classList.remove('hidden');
+          return;
+        }
         const patch = {
           title,
           courseId: isCustom ? null : form.elements.courseId.value,
           courseName,
           dueAt: fromLocalInput(form.elements.dueAt.value),
           status: form.elements.status.value,
+          grade,
           note: form.elements.note.value.trim(),
           updatedAt: new Date().toISOString()
         };

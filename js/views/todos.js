@@ -5,6 +5,7 @@ import { openModal } from '../ui/modal.js';
 import { showUndo } from '../ui/undo.js';
 import { toast } from '../ui/toast.js';
 import { makeTrashEntry } from '../core/trash.js';
+import { parseSubtaskLines, mergeSubtasks, subtaskProgress, subtaskText } from '../core/subtasks.js';
 
 let filter = 'all';
 let dragId = null;
@@ -29,6 +30,8 @@ function todoItem(todo, today) {
         ${selected.has(todo.id) ? 'checked' : ''} aria-label="选择这条待办">`
     : `<input type="checkbox" class="todo-check" data-action="toggle" data-id="${esc(todo.id)}"
         ${todo.done ? 'checked' : ''} aria-label="标记完成">`;
+  const subs = todo.subtasks || [];
+  const progress = subtaskProgress(subs);
   return `
     <li class="todo-item ${todo.done ? 'done' : ''} ${selected.has(todo.id) ? 'selected' : ''}" draggable="${selectMode ? 'false' : 'true'}" data-id="${esc(todo.id)}">
       ${check}
@@ -38,8 +41,22 @@ function todoItem(todo, today) {
           ${todo.dueDate ? `<span class="text-xs ${overdue ? 'overdue' : 'dim'}">${esc(todoDueLabel(todo.dueDate, today))}</span>` : ''}
           ${priorityBadge(todo.priority)}
           ${todo.repeat && todo.repeat !== 'none' ? `<span class="badge muted">${formatRepeat(todo.repeat)}</span>` : ''}
+          ${subs.length ? `<span class="badge subtask-badge ${progress.done === progress.total ? 'ok' : 'muted'}">子任务 ${progress.done}/${progress.total}</span>` : ''}
           ${todo.note ? `<span class="text-xs dim">· ${esc(todo.note)}</span>` : ''}
         </div>
+        ${subs.length ? `
+          <details class="subtask-box">
+            <summary>展开子任务</summary>
+            <ul class="subtask-list">
+              ${subs.map((sub) => `
+                <li class="${sub.done ? 'done' : ''}">
+                  <label class="row" style="gap:6px;align-items:center">
+                    <input type="checkbox" data-action="subtask" data-id="${esc(todo.id)}" data-sub="${esc(sub.id)}" ${sub.done ? 'checked' : ''}>
+                    <span>${esc(sub.title)}</span>
+                  </label>
+                </li>`).join('')}
+            </ul>
+          </details>` : ''}
       </div>
       <button class="btn ghost icon sm" type="button" data-action="edit" data-id="${esc(todo.id)}" aria-label="编辑">✎</button>
       <button class="btn ghost icon sm" type="button" data-action="del" data-id="${esc(todo.id)}" aria-label="删除">🗑</button>
@@ -170,6 +187,10 @@ function todoFormHtml(todo) {
         </div>
       </div>
       <div class="field">
+        <label>子任务（每行一个）</label>
+        <textarea class="textarea" name="subtasks" style="min-height:60px" placeholder="例如：\n查资料\n写初稿">${esc(subtaskText(todo.subtasks))}</textarea>
+      </div>
+      <div class="field">
         <label>备注</label>
         <textarea class="textarea" name="note" style="min-height:70px">${esc(todo.note || '')}</textarea>
       </div>
@@ -200,6 +221,7 @@ function openTodoForm(store, rerender, existing) {
           dueDate: form.elements.dueDate.value || null,
           priority: form.elements.priority.value,
           repeat: form.elements.repeat.value || 'none',
+          subtasks: mergeSubtasks(existing ? existing.subtasks : [], parseSubtaskLines(form.elements.subtasks.value)),
           note: form.elements.note.value.trim(),
           updatedAt: new Date().toISOString()
         };
@@ -360,6 +382,32 @@ export function bind(root, { store, rerender }) {
       if (box.checked) selected.add(box.dataset.id);
       else selected.delete(box.dataset.id);
       rerender();
+    });
+  });
+
+  root.querySelectorAll('[data-action="subtask"]').forEach((box) => {
+    box.addEventListener('change', () => {
+      const todoId = box.dataset.id;
+      const subId = box.dataset.sub;
+      store.update((d) => {
+        const todo = d.data.todos.find((t) => t.id === todoId);
+        if (!todo) return;
+        const sub = (todo.subtasks || []).find((s) => s.id === subId);
+        if (sub) sub.done = box.checked;
+        todo.updatedAt = new Date().toISOString();
+      }, { notify: false });
+
+      // 就地更新，避免重渲染把展开的子任务收起
+      const li = box.closest('li');
+      if (li) li.classList.toggle('done', box.checked);
+      const todo = store.state.data.todos.find((t) => t.id === todoId);
+      const badge = box.closest('.todo-item') && box.closest('.todo-item').querySelector('.subtask-badge');
+      if (todo && badge) {
+        const progress = subtaskProgress(todo.subtasks || []);
+        badge.textContent = `子任务 ${progress.done}/${progress.total}`;
+        badge.classList.toggle('ok', progress.done === progress.total);
+        badge.classList.toggle('muted', progress.done !== progress.total);
+      }
     });
   });
 
