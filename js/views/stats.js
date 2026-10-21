@@ -1,5 +1,5 @@
 import { esc } from '../core/html.js';
-import { fmtMoney, fmtDuration, todayStr, monthKeyOf, fmtDateCN } from '../core/date.js';
+import { fmtMoney, fmtDuration, todayStr, monthKeyOf } from '../core/date.js';
 import {
   fitnessWeeklySeries, expenseMonthlySeries, funDailySeries,
   assignmentMonthStats, fitnessWeek, fitnessStreak
@@ -64,7 +64,7 @@ export function render(state, ctx = {}) {
         </section>
 
         <section class="card pad">
-          <div class="card-title"><h3>本月作业提交</h3><span class="text-xs dim">${fmtDateCN(today).slice(0, -1)}月</span></div>
+          <div class="card-title"><h3>本月作业提交</h3><span class="text-xs dim">${Number(monthKeyOf(today).slice(5))} 月</span></div>
           <div class="stat" style="margin-bottom:10px">
             <span class="value num">${homework.percent}%</span>
             <span class="label">已交 ${homework.submitted} / 共 ${homework.total}</span>
