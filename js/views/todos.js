@@ -7,6 +7,8 @@ import { toast } from '../ui/toast.js';
 
 let filter = 'all';
 let dragId = null;
+let selectMode = false;
+const selected = new Set();
 
 const PRIORITY = {
   high: { label: '高', cls: 'danger' },
@@ -21,10 +23,14 @@ function priorityBadge(p) {
 
 function todoItem(todo, today) {
   const overdue = todo.dueDate && todo.dueDate < today && !todo.done;
+  const check = selectMode
+    ? `<input type="checkbox" class="todo-check" data-action="select" data-id="${esc(todo.id)}"
+        ${selected.has(todo.id) ? 'checked' : ''} aria-label="选择这条待办">`
+    : `<input type="checkbox" class="todo-check" data-action="toggle" data-id="${esc(todo.id)}"
+        ${todo.done ? 'checked' : ''} aria-label="标记完成">`;
   return `
-    <li class="todo-item ${todo.done ? 'done' : ''}" draggable="true" data-id="${esc(todo.id)}">
-      <input type="checkbox" class="todo-check" data-action="toggle" data-id="${esc(todo.id)}"
-        ${todo.done ? 'checked' : ''} aria-label="标记完成">
+    <li class="todo-item ${todo.done ? 'done' : ''} ${selected.has(todo.id) ? 'selected' : ''}" draggable="${selectMode ? 'false' : 'true'}" data-id="${esc(todo.id)}">
+      ${check}
       <div class="grow">
         <div class="todo-title">${esc(todo.title)}</div>
         <div class="todo-meta">
@@ -85,12 +91,25 @@ export function render(state, ctx = {}) {
             <div class="stat"><span class="value num">${open.length}</span><span class="label">未完成</span></div>
             <div class="stat"><span class="value num" style="color:${overdue.length ? 'var(--danger)' : 'inherit'}">${overdue.length}</span><span class="label">已逾期</span></div>
           </div>
-          <div class="segmented">
-            ${[['all', '全部'], ['open', '未完成'], ['done', '已完成']].map(([key, label]) => `
-              <button type="button" class="${filter === key ? 'active' : ''}" data-action="filter" data-value="${key}">${label}</button>`).join('')}
+          <div class="row wrap" style="gap:8px">
+            <div class="segmented">
+              ${[['all', '全部'], ['open', '未完成'], ['done', '已完成']].map(([key, label]) => `
+                <button type="button" class="${filter === key ? 'active' : ''}" data-action="filter" data-value="${key}">${label}</button>`).join('')}
+            </div>
+            <button class="btn sm" type="button" data-action="select-mode">${selectMode ? '退出批量' : '批量'}</button>
           </div>
         </div>
       </div>
+
+      ${selectMode ? `
+        <div class="card pad batch-bar">
+          <span class="strong">已选 ${selected.size} 条</span>
+          <div class="row wrap" style="gap:8px">
+            <button class="btn sm" type="button" data-action="select-all">全选未完成</button>
+            <button class="btn sm primary" type="button" data-action="batch-done" ${selected.size ? '' : 'disabled'}>标记完成</button>
+            <button class="btn sm danger" type="button" data-action="batch-del" ${selected.size ? '' : 'disabled'}>删除</button>
+          </div>
+        </div>` : ''}
 
       <div class="card pad">
         <form class="todo-add" data-form="add-todo">
@@ -229,7 +248,52 @@ export function bind(root, { store, rerender }) {
       rerender();
       return;
     }
-    if (action === 'toggle') return;
+    if (action === 'select-mode') {
+      selectMode = !selectMode;
+      selected.clear();
+      rerender();
+      return;
+    }
+    if (action === 'select-all') {
+      for (const todo of store.state.data.todos) {
+        if (!todo.done) selected.add(todo.id);
+      }
+      rerender();
+      return;
+    }
+    if (action === 'batch-done') {
+      if (!selected.size) return;
+      const count = selected.size;
+      store.update((d) => {
+        for (const todo of d.data.todos) {
+          if (!selected.has(todo.id)) continue;
+          todo.done = true;
+          todo.doneAt = new Date().toISOString();
+          todo.updatedAt = new Date().toISOString();
+        }
+      });
+      selected.clear();
+      selectMode = false;
+      rerender();
+      toast(`已完成 ${count} 条`);
+      return;
+    }
+    if (action === 'batch-del') {
+      if (!selected.size) return;
+      const removed = store.state.data.todos.filter((t) => selected.has(t.id));
+      store.update((d) => {
+        d.data.todos = d.data.todos.filter((t) => !selected.has(t.id));
+      });
+      selected.clear();
+      selectMode = false;
+      rerender();
+      showUndo(`已删除 ${removed.length} 条待办`, () => {
+        store.update((d) => { d.data.todos.push(...removed); });
+        rerender();
+      });
+      return;
+    }
+    if (action === 'toggle' || action === 'select') return;
     if (action === 'edit') {
       const todo = store.state.data.todos.find((t) => t.id === id);
       if (todo) openTodoForm(store, rerender, todo);
@@ -251,6 +315,14 @@ export function bind(root, { store, rerender }) {
         todo.doneAt = box.checked ? new Date().toISOString() : null;
         todo.updatedAt = new Date().toISOString();
       });
+    });
+  });
+
+  root.querySelectorAll('[data-action="select"]').forEach((box) => {
+    box.addEventListener('change', () => {
+      if (box.checked) selected.add(box.dataset.id);
+      else selected.delete(box.dataset.id);
+      rerender();
     });
   });
 

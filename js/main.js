@@ -2,7 +2,9 @@ import { api } from './api.js';
 import { Store } from './store.js';
 import { createRouter } from './router.js';
 import { toast } from './ui/toast.js';
-import { openDrawer } from './ui/drawer.js';
+import { openDrawer, closeDrawer } from './ui/drawer.js';
+import { closeModal } from './ui/modal.js';
+import { openCommandPalette, openShortcutsHelp } from './ui/command.js';
 import { icon, esc, uid } from './core/html.js';
 import { timerElapsed } from './core/calc.js';
 import { todayStr } from './core/date.js';
@@ -94,7 +96,12 @@ app.innerHTML = `
           <h1 id="page-title">首页总览</h1>
           <div class="sub" id="page-sub"></div>
         </div>
-        <button class="btn primary sm" data-action="quick-add">＋ 添加</button>
+        <div class="row" style="gap:8px">
+          <button class="btn ghost sm topbar-search" type="button" data-action="open-search" title="搜索（Ctrl+K）">
+            <span aria-hidden="true">🔍</span><span class="search-label">搜索</span><kbd>Ctrl K</kbd>
+          </button>
+          <button class="btn primary sm" data-action="quick-add">＋ 添加</button>
+        </div>
       </header>
       <section class="view" id="view"></section>
     </div>
@@ -193,7 +200,7 @@ store.subscribe((state) => {
   renderRoute(currentRoute);
 });
 
-// 全局快速添加（后续里程碑接入具体录入）
+// 全局快速添加与搜索
 document.addEventListener('click', (event) => {
   const more = event.target.closest('[data-action="open-more"]');
   if (more) {
@@ -203,10 +210,50 @@ document.addEventListener('click', (event) => {
     return;
   }
 
+  const search = event.target.closest('[data-action="open-search"]');
+  if (search) {
+    event.preventDefault();
+    openCommandPalette(store, { go: (name) => router.go(name) });
+    return;
+  }
+
   const trigger = event.target.closest('[data-action="quick-add"]');
   if (trigger) {
     event.preventDefault();
     openQuickAdd(store);
+  }
+});
+
+// 键盘快捷键
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    closeModal();
+    closeDrawer();
+    return;
+  }
+
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    openCommandPalette(store, { go: (name) => router.go(name) });
+    return;
+  }
+
+  const target = event.target;
+  const typing = target && (['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable);
+  if (typing) return;
+
+  if (event.key === '/') {
+    event.preventDefault();
+    openCommandPalette(store, { go: (name) => router.go(name) });
+  } else if (event.key === '?') {
+    event.preventDefault();
+    openShortcutsHelp();
+  } else if (event.key === 'n' || event.key === 'N') {
+    event.preventDefault();
+    openQuickAdd(store);
+  } else if (/^[1-9]$/.test(event.key)) {
+    const item = NAV[Number(event.key) - 1];
+    if (item) router.go(item.name);
   }
 });
 

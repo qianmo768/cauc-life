@@ -501,3 +501,33 @@ body.has-bg .drawer {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
 }
+
+/* ---------- 搜索面板 ---------- */
+.cmd { display: flex; flex-direction: column; gap: 10px; }
+.cmd-input { font-size: 15px; min-height: 44px; }
+.cmd-results { display: flex; flex-direction: column; gap: 2px; max-height: 340px; overflow: auto; }
+.cmd-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px; border-radius: 10px;
+  text-align: left; color: var(--text); background: none; border: none;
+  transition: background .12s ease;
+}
+.cmd-item:hover, .cmd-item.active { background: var(--brand-soft); }
+.cmd-kind { font-size: 11px; color: var(--text-3); min-width: 34px; flex: none; }
+.cmd-title { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmd-sub { font-size: 12px; color: var(--text-3); max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.topbar-search kbd {
+  font-size: 10px; padding: 1px 5px; border: 1px solid var(--line);
+  border-radius: 4px; color: var(--text-3); background: var(--bg-soft);
+}
+
+/* ---------- 批量操作 ---------- */
+.batch-bar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.todo-item.selected { background: var(--brand-soft); border-radius: 8px; }
+
+@media (max-width: 768px) {
+  .topbar-search kbd { display: none; }
+  .topbar-search .search-label { display: none; }
+  .cmd-sub { display: none; }
+}
