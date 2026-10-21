@@ -5,10 +5,12 @@ import {
 } from '../core/date.js';
 import {
   coursesOn, nextCourse, todosForToday, assignmentsDueToday, summaryCards,
-  semesterProgress, weekInfo, courseTimes, todayProgress
+  semesterProgress, weekInfo, courseTimes, todayProgress,
+  sortCardsByOrder, DEFAULT_CARD_ORDER
 } from '../core/calc.js';
 
 let tickTimer = null;
+let layoutEditing = false;
 
 const PRIORITY_LABEL = { high: '高', mid: '中', low: '低' };
 
@@ -65,6 +67,9 @@ export function render(state, ctx = {}) {
   const todos = todosForToday(state, today);
   const hw = assignmentsDueToday(state, today);
   const cards = summaryCards(state, today, now);
+  const settings = state.data.settings || {};
+  const hiddenCards = settings.hiddenCards || [];
+  const visibleCards = sortCardsByOrder(cards, settings.homeCardOrder || DEFAULT_CARD_ORDER, hiddenCards);
   const sem = semesterProgress(state, today);
   const notes = state.data.notes || { text: '', updatedAt: null };
   const doneCount = todos.filter((t) => t.done).length;
@@ -142,10 +147,16 @@ export function render(state, ctx = {}) {
       </section>
 
       <section>
-        <div class="section-title"><h2>模块摘要</h2><span class="text-xs dim">点一张卡进对应页面</span></div>
+        <div class="section-title">
+          <h2>模块摘要</h2>
+          <span class="text-xs dim">${layoutEditing ? '拖动卡片排序，点 × 隐藏' : '点一张卡进对应页面'}</span>
+          <button class="btn ghost sm" type="button" data-action="toggle-layout">${layoutEditing ? '完成' : '调整布局'}</button>
+          ${layoutEditing ? '<button class="btn ghost sm" type="button" data-action="reset-layout">恢复默认</button>' : ''}
+        </div>
         <div class="cards-grid">
-          ${cards.map((card) => `
-            <a class="summary-card tone-${esc(card.tone || 'ok')}" href="#/${esc(card.route)}">
+          ${visibleCards.map((card) => `            <a class="summary-card tone-${esc(card.tone || 'ok')} ${layoutEditing ? 'editing' : ''}"
+               href="#/${esc(card.route)}" data-card-key="${esc(card.key)}" draggable="${layoutEditing ? 'true' : 'false'}">
+              ${layoutEditing ? `<button class="card-hide" type="button" data-action="hide-card" data-key="${esc(card.key)}" aria-label="隐藏这张卡">×</button>` : ''}
               <div class="summary-head"><span class="icon">${esc(card.icon)}</span><span class="text-xs dim">${esc(card.title)}</span></div>
               <div class="summary-value num">${esc(card.value)}</div>
               <div class="summary-sub text-xs">${esc(card.sub)}</div>
@@ -154,6 +165,15 @@ export function render(state, ctx = {}) {
                 : ''}
             </a>`).join('')}
         </div>
+        ${visibleCards.length ? '' : '<div class="empty" style="padding:20px 8px"><p class="text-sm dim">所有摘要卡都被隐藏了，点「恢复默认」可以找回来。</p></div>'}
+        ${layoutEditing && hiddenCards.length ? `
+          <div class="row wrap" style="margin-top:10px">
+            <span class="text-xs dim">已隐藏：</span>
+            ${hiddenCards.map((key) => {
+              const card = cards.find((c) => c.key === key);
+              return `<button class="btn sm" type="button" data-action="show-card" data-key="${esc(key)}">显示 ${esc(card ? card.title : key)}</button>`;
+            }).join('')}
+          </div>` : ''}
       </section>
     </div>
   `;
@@ -162,6 +182,70 @@ export function render(state, ctx = {}) {
 export function bind(root, { store, rerender }) {
   clearInterval(tickTimer);
   tickTimer = setInterval(() => rerender(), 60000);
+
+  root.addEventListener('click', (event) => {
+    const el = event.target.closest('[data-action]');
+    if (!el) return;
+    const action = el.dataset.action;
+    if (action === 'toggle-layout') {
+      event.preventDefault();
+      layoutEditing = !layoutEditing;
+      rerender();
+    } else if (action === 'reset-layout') {
+      event.preventDefault();
+      store.update((d) => {
+        delete d.data.settings.homeCardOrder;
+        delete d.data.settings.hiddenCards;
+      });
+    } else if (action === 'hide-card') {
+      event.preventDefault();
+      event.stopPropagation();
+      const key = el.dataset.key;
+      store.update((d) => {
+        const hidden = new Set(d.data.settings.hiddenCards || []);
+        hidden.add(key);
+        d.data.settings.hiddenCards = [...hidden];
+      });
+    } else if (action === 'show-card') {
+      event.preventDefault();
+      const key = el.dataset.key;
+      store.update((d) => {
+        d.data.settings.hiddenCards = (d.data.settings.hiddenCards || []).filter((k) => k !== key);
+      });
+    }
+  });
+
+  // 拖拽调整卡片顺序
+  if (layoutEditing) {
+    const cardEls = [...root.querySelectorAll('[data-card-key]')];
+    let dragKey = null;
+    cardEls.forEach((el) => {
+      el.addEventListener('dragstart', (event) => {
+        dragKey = el.dataset.cardKey;
+        el.classList.add('dragging');
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+      });
+      el.addEventListener('dragend', () => {
+        el.classList.remove('dragging');
+        dragKey = null;
+      });
+      el.addEventListener('dragover', (event) => event.preventDefault());
+      el.addEventListener('drop', (event) => {
+        event.preventDefault();
+        const targetKey = el.dataset.cardKey;
+        if (!dragKey || dragKey === targetKey) return;
+        const hidden = store.state.data.settings.hiddenCards || [];
+        const keys = [...cardEls.map((c) => c.dataset.cardKey), ...hidden];
+        const from = keys.indexOf(dragKey);
+        const to = keys.indexOf(targetKey);
+        if (from < 0 || to < 0) return;
+        keys.splice(from, 1);
+        keys.splice(to, 0, dragKey);
+        store.update((d) => { d.data.settings.homeCardOrder = keys; });
+        dragKey = null;
+      });
+    });
+  }
 
   const form = root.querySelector('[data-form="add-todo"]');
   if (form) {

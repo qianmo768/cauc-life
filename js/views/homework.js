@@ -8,6 +8,7 @@ import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
 import { makeTrashEntry } from '../core/trash.js';
+import { api } from '../api.js';
 
 let viewMode = 'due';
 let statusFilter = 'all';
@@ -33,6 +34,10 @@ function cardHtml(state, item, today) {
       <div class="hw-title">${esc(item.title)}</div>
       <div class="hw-meta ${esc(meta.tone)}">${esc(meta.label)}</div>
       ${typeof item.grade === 'number' ? `<div class="hw-grade">成绩 <strong>${item.grade}</strong> 分</div>` : ''}
+      ${(item.attachments || []).length ? `
+        <div class="hw-attach">
+          ${item.attachments.map((file) => `<a href="${esc(file.url)}" target="_blank" rel="noopener">📎 ${esc(file.name)}</a>`).join('')}
+        </div>` : ''}
       ${item.note ? `<div class="text-xs dim">${esc(item.note)}</div>` : ''}
       <div class="hw-actions">
         <button class="btn sm ${nextAction.cls}" type="button" data-action="${nextAction.action}" data-id="${esc(item.id)}">${nextAction.label}</button>
@@ -96,8 +101,16 @@ export function render(state, ctx = {}) {
   `;
 }
 
-function courseOptions(state, selectedId) {
-  return `
+function readAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function courseOptions(state, selectedId) {  return `
     ${(state.data.courses || []).map((c) => `<option value="${esc(c.id)}" ${c.id === selectedId ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
     <option value="__custom" ${!selectedId ? 'selected' : ''}>其他（手动输入）</option>
   `;
@@ -137,6 +150,11 @@ function formHtml(state, item = {}) {
           <input class="input" type="number" name="grade" min="0" max="100" step="0.5" value="${typeof item.grade === 'number' ? item.grade : ''}" placeholder="例如 92">
         </div>
         <div class="field full">
+          <label>附件（单个不超过 8 MB）</label>
+          <div class="attach-list" data-attach-list></div>
+          <input class="input" type="file" data-attach-input style="padding:8px">
+        </div>
+        <div class="field full">
           <label>备注</label>
           <textarea class="textarea" name="note" style="min-height:70px">${esc(item.note || '')}</textarea>
         </div>
@@ -162,6 +180,48 @@ function openForm(store, rerender, existing = null) {
         customWrap.classList.toggle('hidden', !isCustom);
       });
       customWrap.classList.toggle('hidden', form.elements.courseId.value !== '__custom');
+
+      let attachments = [...((existing && existing.attachments) || [])];
+      const listEl = mask.querySelector('[data-attach-list]');
+      const fileInput = mask.querySelector('[data-attach-input]');
+
+      const renderAttachments = () => {
+        listEl.innerHTML = attachments.length
+          ? attachments.map((file, index) => `
+              <div class="attach-item">
+                <a href="${esc(file.url)}" target="_blank" rel="noopener">📎 ${esc(file.name)}</a>
+                <span class="text-xs dim">${Math.max(1, Math.round((file.size || 0) / 1024))} KB</span>
+                <button class="btn ghost icon sm" type="button" data-remove-attach="${index}" aria-label="移除附件">×</button>
+              </div>`).join('')
+          : '<span class="text-xs dim">还没有附件</span>';
+        listEl.querySelectorAll('[data-remove-attach]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            attachments.splice(Number(btn.dataset.removeAttach), 1);
+            renderAttachments();
+          });
+        });
+      };
+      renderAttachments();
+
+      fileInput.addEventListener('change', async () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        if (file.size > 8 * 1024 * 1024) {
+          toast('附件不能超过 8 MB', { tone: 'error' });
+          fileInput.value = '';
+          return;
+        }
+        try {
+          const dataUrl = await readAsDataUrl(file);
+          const result = await api.uploadFile(file.name, dataUrl);
+          attachments.push({ id: uid('att'), ...result.file });
+          renderAttachments();
+          fileInput.value = '';
+          toast('附件已上传');
+        } catch (err) {
+          toast(`上传失败：${err.message}`, { tone: 'error' });
+        }
+      });
 
       mask.querySelector('[data-cancel]').addEventListener('click', close);
       mask.querySelector('[data-save]').addEventListener('click', () => {
@@ -191,6 +251,7 @@ function openForm(store, rerender, existing = null) {
           dueAt: fromLocalInput(form.elements.dueAt.value),
           status: form.elements.status.value,
           grade,
+          attachments,
           note: form.elements.note.value.trim(),
           updatedAt: new Date().toISOString()
         };

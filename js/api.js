@@ -36,6 +36,9 @@ export const api = {
   async importDb(mode, payload) {
     return (await request('/api/import', jsonInit('POST', { mode, payload }))).json();
   },
+  async uploadFile(name, dataUrl) {
+    return (await request('/api/upload', jsonInit('POST', { name, dataUrl }))).json();
+  },
   exportUrl() {
     return '/api/export';
   },

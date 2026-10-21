@@ -391,6 +391,12 @@ details[open] > summary::before { content: "▾"; }
 .hw-meta.muted { color: var(--text-3); }
 .hw-grade { font-size: 12px; color: var(--ok); font-weight: 600; }
 .hw-grade strong { font-size: 14px; }
+.hw-attach { display: flex; flex-direction: column; gap: 2px; }
+.hw-attach a { font-size: 12px; color: var(--brand); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hw-attach a:hover { text-decoration: underline; }
+.attach-list { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.attach-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.attach-item a { color: var(--brand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hw-actions { display: flex; gap: 6px; margin-top: auto; padding-top: 6px; flex-wrap: wrap; }
 
 /* ---------- 健身 ---------- */

@@ -790,3 +790,24 @@ export function courseGradeSummary(state) {
   })).sort((a, b) => b.average - a.average);
 }
 
+// ---------- 首页卡片排版 ----------
+
+export const DEFAULT_CARD_ORDER = ['overview', 'classes', 'todos', 'homework', 'fitness', 'budget', 'fun', 'settings'];
+
+export function sortCardsByOrder(cards, order = [], hidden = []) {
+  const byKey = new Map((cards || []).map((card) => [card.key, card]));
+  const hiddenSet = new Set(hidden || []);
+  const out = [];
+  for (const key of order || []) {
+    const card = byKey.get(key);
+    if (card && !hiddenSet.has(key)) {
+      out.push(card);
+      byKey.delete(key);
+    }
+  }
+  for (const card of byKey.values()) {
+    if (!hiddenSet.has(card.key)) out.push(card);
+  }
+  return out;
+}
+
