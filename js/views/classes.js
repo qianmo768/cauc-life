@@ -118,20 +118,21 @@ export function render(state, ctx = {}) {
   const bands = buildBands(slots);
   const year = new Date(`${dates[0]}T00:00:00`).getFullYear();
 
-  const dayHeaders = dates.map((d) => `
-    <div class="tt-day ${d === today ? 'today' : ''}">
+  // 表头、时间标签、空格子全部显式定位，避免被课程块影响自动排版
+  const dayHeaders = dates.map((d, index) => `
+    <div class="tt-day ${d === today ? 'today' : ''}" style="grid-column:${index + 2};grid-row:1">
       <span class="tt-day-name">${weekdayName(weekdayIndex(d)).replace('周', '')}</span>
       <span class="tt-day-date">${shortDate(d)}</span>
     </div>`).join('');
 
-  const bandCells = bands.map((band) => `
-    <div class="tt-slot">
+  const bandCells = bands.map((band, bandIndex) => `
+    <div class="tt-slot" style="grid-column:1;grid-row:${bandIndex + 2}">
       <span class="tt-slot-name">${esc(band.label)}</span>
       <span class="tt-slot-time">${esc(formatClock(band.start))}</span>
       <i class="tt-slot-line" aria-hidden="true"></i>
       <span class="tt-slot-time">${esc(formatClock(band.end))}</span>
     </div>
-    ${dates.map((d) => `<div class="tt-cell ${d === today ? 'today-col' : ''}"></div>`).join('')}
+    ${dates.map((d, dayIndex) => `<div class="tt-cell ${d === today ? 'today-col' : ''}" style="grid-column:${dayIndex + 2};grid-row:${bandIndex + 2}"></div>`).join('')}
   `).join('');
 
   const blocks = [];
@@ -203,7 +204,7 @@ export function render(state, ctx = {}) {
           </div>
           <div class="tt-scroll">
             <div class="tt-grid" style="grid-template-rows: 54px repeat(${bands.length}, minmax(104px, 1fr))">
-              <div class="tt-corner">节次</div>
+              <div class="tt-corner" style="grid-column:1;grid-row:1">节次</div>
               ${dayHeaders}
               ${bandCells}
               ${blocks.join('')}
