@@ -5,8 +5,12 @@ import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
 import { makeTrashEntry } from '../core/trash.js';
+import {
+  accountsOf, accountName, accountOfExpense, accountTotals, parseBillCsv, mapBillAccounts
+} from '../core/accounts.js';
 
 let monthKey = monthKeyOf(todayStr());
+let accountFilter = 'all';
 
 function barPercent(row, totalSpent) {
   if (row.budget > 0) return Math.min(100, Math.round((row.spent / row.budget) * 100));
@@ -39,7 +43,11 @@ function renderBreakdown(rows, totalSpent) {
 export function render(state, ctx = {}) {
   const totals = expenseTotals(state, monthKey);
   const month = budgetMonth(state, monthKey);
-  const groups = expensesByDate(month.expenses);
+  const accounts = accountsOf(state);
+  const monthExpenses = month.expenses.filter(
+    (item) => accountFilter === 'all' || accountOfExpense(item) === accountFilter
+  );
+  const groups = expensesByDate(monthExpenses);
   const breakdown = budgetBreakdown(state, monthKey);
   const hasBudget = totals.total > 0;
   const overspent = totals.overspent;
@@ -53,7 +61,19 @@ export function render(state, ctx = {}) {
           <button class="btn icon sm" type="button" data-action="next-month" aria-label="下个月">›</button>
           ${monthKey !== monthKeyOf(todayStr()) ? '<button class="btn sm" type="button" data-action="this-month">本月</button>' : ''}
         </div>
-        <button class="btn primary sm" type="button" data-action="add">＋ 记一笔</button>
+        <div class="row wrap" style="gap:8px">
+          <button class="btn sm" type="button" data-action="import-bills">导入账单</button>
+          <button class="btn sm" type="button" data-action="manage-accounts">账户</button>
+          <button class="btn primary sm" type="button" data-action="add">＋ 记一笔</button>
+        </div>
+      </div>
+
+      <div class="row wrap" style="gap:6px">
+        <button class="chip ${accountFilter === 'all' ? 'active' : ''}" type="button" data-action="account-filter" data-id="all">全部账户</button>
+        ${accountTotals(state, monthKey).map(({ account, spent }) => `
+          <button class="chip ${accountFilter === account.id ? 'active' : ''}" type="button" data-action="account-filter" data-id="${esc(account.id)}">
+            ${esc(account.name)} ${fmtMoney(spent)}
+          </button>`).join('')}
       </div>
 
       <section class="card pad">
@@ -91,6 +111,9 @@ export function render(state, ctx = {}) {
             <select class="select" name="category">
               ${BUDGET_CATEGORIES.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
             </select>
+            <select class="select" name="accountId">
+              ${accounts.map((account) => `<option value="${esc(account.id)}" ${accountFilter === account.id ? 'selected' : ''}>${esc(account.name)}</option>`).join('')}
+            </select>
             <input class="input" type="date" name="date" value="${todayStr()}">
             <input class="input" name="note" placeholder="备注（可留空）">
             <button class="btn primary" type="submit">记下</button>
@@ -101,7 +124,7 @@ export function render(state, ctx = {}) {
       <section class="card pad">
         <div class="card-title"><h3>明细</h3><span class="text-xs dim">${month.expenses.length} 笔</span></div>
         ${groups.length ? groups.map((group) => `
-          <div class="date-group">
+        <div class="date-group">
             <div class="row-between group-title" style="margin:8px 0 2px">
               <span>${esc(group.date)}</span>
               <span class="num text-xs dim">${fmtMoney(group.total)}</span>
@@ -110,6 +133,7 @@ export function render(state, ctx = {}) {
               ${group.items.map((item) => `
                 <li class="expense-row">
                   <span class="tag">${esc(item.category || '其他')}</span>
+                  <span class="tag">${esc(accountName(state, accountOfExpense(item)))}</span>
                   <span class="grow">${esc(item.note || '—')}</span>
                   <span class="num strong">${fmtMoney(item.amount)}</span>
                   <button class="btn ghost icon sm" type="button" data-action="edit" data-id="${esc(item.id)}" aria-label="编辑">✎</button>
@@ -231,8 +255,87 @@ function openExpenseForm(store, rerender, existing = null) {
   });
 }
 
-export function bind(root, { store, rerender }) {
-  root.addEventListener('click', async (event) => {
+function openAccounts(store, rerender) {
+  const accounts = accountsOf(store.state);
+  openModal({
+    title: '账户',
+    body: `
+      <div class="stack">
+        <div class="col">
+          ${accounts.map((account) => `<div class="kv"><span>${esc(account.name)}</span><span class="num">${fmtMoney(accountTotals(store.state, monthKey).find((row) => row.account.id === account.id)?.spent || 0)}</span></div>`).join('')}
+        </div>
+        <form class="row" data-form="account" style="gap:8px">
+          <input class="input" name="name" placeholder="新账户名，例如：微信 / 饭卡">
+          <button class="btn primary sm" type="submit">添加</button>
+        </form>
+        <p class="hint">账单导入时遇到的未知账户会自动创建。</p>
+      </div>
+    `,
+    onMount: (mask, { close }) => {
+      mask.querySelector('[data-form="account"]').addEventListener('submit', (event) => {
+        event.preventDefault();
+        const name = event.target.elements.name.value.trim();
+        if (!name) return;
+        store.update((d) => {
+          d.data.budget.accounts = [...accountsOf(d), { id: uid('acc'), name }];
+        });
+        close();
+        rerender();
+        toast('账户已添加');
+      });
+    }
+  });
+}
+
+function importBills(store, rerender) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.csv,text/csv';
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    let parsed;
+    try {
+      parsed = parseBillCsv(await file.text());
+    } catch {
+      toast('这个 CSV 读不出来', { tone: 'error' });
+      return;
+    }
+    if (!parsed.rows.length) {
+      toast(parsed.errors[0] || '没有可导入的记录', { tone: 'error', duration: 3500 });
+      return;
+    }
+    if (parsed.errors.length) {
+      toast(`跳过 ${parsed.errors.length} 行：${parsed.errors[0]}`, { duration: 4000 });
+    }
+    const ok = await confirmDialog({
+      title: '导入账单',
+      message: `读到 ${parsed.rows.length} 条记录，确认导入到当前数据？`,
+      confirmText: '导入'
+    });
+    if (!ok) return;
+
+    store.update((d) => {
+      const mapped = mapBillAccounts(d.data.budget.accounts || [], parsed.rows);
+      d.data.budget.accounts = mapped.accounts;
+      for (const row of mapped.rows) {
+        d.data.budget.expenses.push({
+          id: uid('e'),
+          date: row.date,
+          amount: row.amount,
+          category: row.category,
+          accountId: row.accountId,
+          note: row.note
+        });
+      }
+    });
+    rerender();
+    toast(`已导入 ${parsed.rows.length} 笔`);
+  });
+  input.click();
+}
+
+export function bind(root, { store, rerender }) {  root.addEventListener('click', async (event) => {
     const el = event.target.closest('[data-action]');
     if (!el) return;
     const action = el.dataset.action;
@@ -242,6 +345,13 @@ export function bind(root, { store, rerender }) {
     if (action === 'this-month') { monthKey = monthKeyOf(todayStr()); rerender(); return; }
     if (action === 'add') { openExpenseForm(store, rerender); return; }
     if (action === 'edit-budget') { openBudgetEditor(store, rerender); return; }
+    if (action === 'account-filter') {
+      accountFilter = el.dataset.id;
+      rerender();
+      return;
+    }
+    if (action === 'manage-accounts') { openAccounts(store, rerender); return; }
+    if (action === 'import-bills') { importBills(store, rerender); return; }
 
     const id = el.dataset.id;
     const item = (store.state.data.budget.expenses || []).find((e) => e.id === id);
@@ -278,6 +388,7 @@ export function bind(root, { store, rerender }) {
           id: uid('e'),
           amount: Math.round(amount * 100) / 100,
           category: form.elements.category.value,
+          accountId: form.elements.accountId ? form.elements.accountId.value : undefined,
           date,
           note: form.elements.note.value.trim()
         });

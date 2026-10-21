@@ -736,8 +736,7 @@ export function expenseMonthlySeries(state, months = 6, dateStr = todayStr()) {
   return out;
 }
 
-export function funDailySeries(state, days = 7, dateStr = todayStr()) {
-  const out = [];
+export function funDailySeries(state, days = 7, dateStr = todayStr()) {  const out = [];
   for (let i = days - 1; i >= 0; i -= 1) {
     const date = addDays(dateStr, -i);
     const total = sum(
@@ -749,14 +748,26 @@ export function funDailySeries(state, days = 7, dateStr = todayStr()) {
   return out;
 }
 
-export function assignmentMonthStats(state, monthKey = monthKeyOf(todayStr())) {
-  const items = (state.data.assignments || []).filter((a) => String(a.dueAt || '').slice(0, 7) === monthKey);
+export function assignmentMonthStats(state, monthKey = monthKeyOf(todayStr())) {  const items = (state.data.assignments || []).filter((a) => String(a.dueAt || '').slice(0, 7) === monthKey);
   const submitted = items.filter((a) => a.status === 'submitted').length;
   return {
     total: items.length,
     submitted,
     percent: items.length ? Math.round((submitted / items.length) * 100) : 0
   };
+}
+
+export function yearMonthlySeries(state, year) {
+  const out = [];
+  for (let month = 1; month <= 12; month += 1) {
+    const key = `${year}-${String(month).padStart(2, '0')}`;
+    const total = sum(
+      (state.data.budget.expenses || []).filter((e) => String(e.date || '').slice(0, 7) === key),
+      (e) => e.amount
+    );
+    out.push({ label: `${month}月`, key, total });
+  }
+  return out;
 }
 
 // ---------- 成绩 ----------

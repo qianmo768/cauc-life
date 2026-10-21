@@ -2,7 +2,8 @@ import { esc } from '../core/html.js';
 import { fmtMoney, fmtDuration, todayStr, monthKeyOf } from '../core/date.js';
 import {
   fitnessWeeklySeries, expenseMonthlySeries, funDailySeries,
-  assignmentMonthStats, fitnessWeek, fitnessStreak, gradeStats, courseGradeSummary
+  assignmentMonthStats, fitnessWeek, fitnessStreak, gradeStats, courseGradeSummary,
+  yearMonthlySeries
 } from '../core/calc.js';
 
 function barChart(data, pick, format) {
@@ -34,6 +35,9 @@ export function render(state, ctx = {}) {
   const homework = assignmentMonthStats(state, monthKeyOf(today));
   const grades = gradeStats(state);
   const courseGrades = courseGradeSummary(state);
+  const year = Number(today.slice(0, 4));
+  const yearly = yearMonthlySeries(state, year);
+  const yearTotal = yearly.reduce((sum, item) => sum + item.total, 0);
   const totalFitness = fitness.reduce((sum, item) => sum + item.count, 0);
   const totalExpense = expenses.reduce((sum, item) => sum + item.total, 0);
   const totalFun = fun.reduce((sum, item) => sum + item.minutes, 0);
@@ -91,6 +95,11 @@ export function render(state, ctx = {}) {
           ` : '<p class="text-sm dim">还没有录入成绩。在作业的编辑弹层里可以填成绩。</p>'}
         </section>
       </div>
+
+      <section class="card pad">
+        <div class="card-title"><h3>${year} 年度花销</h3><span class="text-xs dim">共 ${fmtMoney(yearTotal)}</span></div>
+        ${barChart(yearly, (item) => item.total, (value) => (value ? `¥${value.toFixed(0)}` : '0'))}
+      </section>
     </div>
   `;
 }
