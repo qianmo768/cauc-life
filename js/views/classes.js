@@ -4,6 +4,7 @@ import {
   fmtDateCN, parseTime, nowMinutes, fmtMonthCN
 } from '../core/date.js';
 import { courseOccurs, courseTimes, findConflicts, validateCourse } from '../core/calc.js';
+import { parseJwglTimetable, buildImportPlan, CAUC_SLOTS } from '../core/jwgl.js';
 import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
@@ -144,6 +145,7 @@ export function render(state, ctx = {}) {
         <button class="course-block" type="button" data-action="open-course" data-id="${esc(course.id)}"
           style="grid-column:${col};grid-row:${startBand + 1}/span ${span};--course:${esc(course.color || COLORS[0])}">
           <span class="cb-name">${esc(course.name)}</span>
+          ${course.adjusted ? '<span class="cb-flag">调</span>' : ''}
           ${course.teacher ? `<span class="cb-teacher">${esc(course.teacher)}</span>` : ''}
           ${course.location ? `<span class="cb-loc">${esc(course.location)}</span>` : ''}
         </button>`);
@@ -178,20 +180,26 @@ export function render(state, ctx = {}) {
           <button class="btn icon sm" type="button" data-action="next-week" aria-label="下一周">›</button>
           ${offset !== 0 ? '<button class="btn sm" type="button" data-action="this-week">回到本周</button>' : ''}
         </div>
-        <button class="btn primary sm" type="button" data-action="add-course">＋ 添加课程</button>
+        <div class="row wrap" style="gap:8px">
+          <button class="btn sm" type="button" data-action="import-jwgl">导入教务课表</button>
+          <button class="btn sm" type="button" data-action="adjustments">调课记录</button>
+          <button class="btn primary sm" type="button" data-action="add-course">＋ 添加课程</button>
+        </div>
       </div>
 
       ${hasAny ? `
         <div class="card pad week-card">
           <div class="tt-top">
             <button class="tt-other" type="button" data-action="other-courses">其他课程</button>
-            <div class="tt-title">${year} 年 · 第 ${week} 周课表</div>
-            <a class="tt-gear" href="#/settings" aria-label="课表设置" title="课表设置">
+            <div class="tt-title">${year} 年 · 第 ${week} 周课表</div>            <a class="tt-gear" href="#/settings" aria-label="课表设置" title="课表设置">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"></path>
               </svg>
             </a>
+          </div>
+          <div class="tt-times">
+            ${bands.map((band) => `<span>${esc(band.label)} ${esc(formatClock(band.start))}–${esc(formatClock(band.end))}</span>`).join('')}
           </div>
           <div class="tt-scroll">
             <div class="tt-grid" style="grid-template-rows: 54px repeat(${bands.length}, minmax(104px, 1fr))">
@@ -448,6 +456,166 @@ function fillSample(store) {
   toast('示例课表已填好');
 }
 
+function openAdjustments(store, rerender) {
+  const list = store.state.data.scheduleChanges || [];
+  const dayOptions = (selected) => [1, 2, 3, 4, 5, 6, 7].map((d) => `<option value="${d}" ${Number(selected) === d ? 'selected' : ''}>${weekdayName(d)}</option>`).join('');
+  const slotOptions = (selected) => Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}" ${Number(selected) === i + 1 ? 'selected' : ''}>第 ${i + 1} 节</option>`).join('');
+
+  const body = `
+    <div class="stack">
+      ${list.length ? `
+        <ul class="list">
+          ${list.map((item) => `
+            <li class="list-item">
+              <span class="grow">
+                ${weekdayName(item.fromDay)} ${item.fromStart}-${item.fromEnd} 节 → ${weekdayName(item.toDay)} ${item.toStart}-${item.toEnd} 节
+              </span>
+              <span class="text-xs dim">${esc(item.note || '')}</span>
+            </li>`).join('')}
+        </ul>` : '<p class="text-sm dim">还没有调课记录。</p>'}
+      <form class="stack" data-form="adjust">
+        <div class="form-grid">
+          <div class="field"><label>原星期</label><select class="select" name="fromDay">${dayOptions(1)}</select></div>
+          <div class="field"><label>原节次</label>
+            <div class="row" style="gap:6px">
+              <select class="select" name="fromStart">${slotOptions(1)}</select>
+              <span class="dim">至</span>
+              <select class="select" name="fromEnd">${slotOptions(2)}</select>
+            </div>
+          </div>
+          <div class="field"><label>新星期</label><select class="select" name="toDay">${dayOptions(1)}</select></div>
+          <div class="field"><label>新节次</label>
+            <div class="row" style="gap:6px">
+              <select class="select" name="toStart">${slotOptions(1)}</select>
+              <span class="dim">至</span>
+              <select class="select" name="toEnd">${slotOptions(2)}</select>
+            </div>
+          </div>
+          <div class="field full"><label>备注</label><input class="input" name="note" placeholder="例如：老师出差，调到周五"></div>
+        </div>
+      </form>
+    </div>
+  `;
+
+  const { close } = openModal({
+    title: '调课记录',
+    wide: true,
+    body,
+    footer: `<button class="btn" type="button" data-cancel>关闭</button>
+             <button class="btn primary" type="button" data-save>记一条</button>`,
+    onMount: (mask, { close }) => {
+      mask.querySelector('[data-cancel]').addEventListener('click', close);
+      mask.querySelector('[data-save]').addEventListener('click', () => {
+        const form = mask.querySelector('[data-form="adjust"]');
+        const item = {
+          id: uid('adj'),
+          fromDay: Number(form.elements.fromDay.value),
+          fromStart: Number(form.elements.fromStart.value),
+          fromEnd: Number(form.elements.fromEnd.value),
+          toDay: Number(form.elements.toDay.value),
+          toStart: Number(form.elements.toStart.value),
+          toEnd: Number(form.elements.toEnd.value),
+          note: form.elements.note.value.trim(),
+          createdAt: new Date().toISOString()
+        };
+        if (item.fromEnd < item.fromStart || item.toEnd < item.toStart) {
+          toast('节次范围不对，重新选一下', { tone: 'error' });
+          return;
+        }
+        store.update((d) => {
+          d.data.scheduleChanges = [...(d.data.scheduleChanges || []), item];
+        });
+        close();
+        rerender();
+        toast('调课记录已保存');
+      });
+    }
+  });
+}
+
+function importJwgl(store, rerender) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.html,.htm';
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    let parsed;
+    try {
+      parsed = parseJwglTimetable(await file.text());
+    } catch {
+      toast('这个网页读不出来', { tone: 'error' });
+      return;
+    }
+    if (!parsed.courses.length) {
+      toast(parsed.errors[0] || '没解析到课程', { tone: 'error', duration: 4000 });
+      return;
+    }
+    openImportPreview(store, rerender, parsed);
+  });
+  input.click();
+}
+
+function openImportPreview(store, rerender, parsed) {
+  const plan = buildImportPlan(store.state.data.courses, parsed.courses);
+  const { close } = openModal({
+    title: '导入教务课表',
+    wide: true,
+    body: `
+      <div class="stack">
+        <div class="row" style="gap:20px;flex-wrap:wrap">
+          <div class="stat"><span class="value num">${parsed.courses.length}</span><span class="label">解析课程</span></div>
+          <div class="stat"><span class="value num">${plan.accepted.length}</span><span class="label">将导入</span></div>
+          <div class="stat"><span class="value num" style="color:${plan.conflicts.length ? 'var(--warn)' : 'inherit'}">${plan.conflicts.length}</span><span class="label">冲突跳过</span></div>
+          <div class="stat"><span class="value num">${plan.kept}</span><span class="label">保留手工课</span></div>
+        </div>
+        ${plan.conflicts.length ? `<div class="callout danger">与手工课冲突，将跳过：${plan.conflicts.map((item) => esc(item.course.name)).join('、')}</div>` : ''}
+        <div class="form-grid">
+          <div class="field">
+            <label>学期起始日</label>
+            <input class="input" type="date" name="semesterStart" value="${esc(store.state.data.settings.semesterStart || '2026-08-30')}">
+          </div>
+          <div class="field">
+            <label>一周从哪天开始</label>
+            <select class="select" name="weekStart">
+              <option value="7" ${(store.state.data.settings.weekStart || 1) === 7 ? 'selected' : ''}>周日</option>
+              <option value="1" ${(store.state.data.settings.weekStart || 1) === 1 ? 'selected' : ''}>周一</option>
+            </select>
+          </div>
+        </div>
+        <p class="hint">会替换上一次从教务导入的课程，手工添加的课程保留；冲突课程按你选的规则跳过。</p>
+        <label class="row" style="gap:8px;align-items:center">
+          <input type="checkbox" name="applySlots" checked>
+          <span class="text-sm">同时应用学校作息时间（1-2 节 8:00–9:35、3-4 节 10:05–11:40 …）</span>
+        </label>
+      </div>
+    `,
+    footer: `<button class="btn" type="button" data-cancel>取消</button>
+             <button class="btn primary" type="button" data-confirm>开始导入</button>`,
+    onMount: (mask, { close }) => {
+      mask.querySelector('[data-cancel]').addEventListener('click', close);
+      mask.querySelector('[data-confirm]').addEventListener('click', () => {
+        const semesterStart = mask.querySelector('[name="semesterStart"]').value || '2026-08-30';
+        const weekStart = Number(mask.querySelector('[name="weekStart"]').value) || 7;
+        const applySlots = mask.querySelector('[name="applySlots"]').checked;
+        store.update((d) => {
+          d.data.settings.semesterStart = semesterStart;
+          d.data.settings.weekStart = weekStart;
+          if (applySlots) d.data.settings.slots = CAUC_SLOTS;
+          const kept = (d.data.courses || []).filter((course) => course.source !== 'jwgl');
+          d.data.courses = [
+            ...kept,
+            ...plan.accepted.map((course) => ({ id: uid('c'), ...course }))
+          ];
+        });
+        close();
+        rerender();
+        toast(`已导入 ${plan.accepted.length} 门课`);
+      });
+    }
+  });
+}
+
 export function bind(root, { store, rerender }) {
   root.addEventListener('click', (event) => {
     const el = event.target.closest('[data-action]');
@@ -457,6 +625,8 @@ export function bind(root, { store, rerender }) {
     else if (action === 'next-week') { offset += 1; rerender(); }
     else if (action === 'this-week') { offset = 0; rerender(); }
     else if (action === 'add-course') { openCourseForm(store, rerender); }
+    else if (action === 'import-jwgl') { importJwgl(store, rerender); }
+    else if (action === 'adjustments') { openAdjustments(store, rerender); }
     else if (action === 'other-courses') { openOtherCourses(store, rerender); }
     else if (action === 'fill-sample') { fillSample(store); }
     else if (action === 'open-course') {

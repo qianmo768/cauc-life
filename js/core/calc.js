@@ -18,15 +18,18 @@ export function weekInfo(state, dateStr = todayStr()) {
   };
 }
 
-/** 课程在某天是否发生（星期、周次范围、单双周、跳过周） */
+/** 课程在某天是否发生（星期、周次范围/多段周次、单双周、跳过周） */
 export function courseOccurs(course, dateStr, week) {
   if (!course) return false;
   if (Number(course.dayOfWeek) !== weekdayIndex(dateStr)) return false;
   if (Array.isArray(course.skips) && course.skips.map(Number).includes(Number(week))) return false;
-  const weeks = Array.isArray(course.weeks) && course.weeks.length ? course.weeks : [1, 18];
-  const from = Number(weeks[0]) || 1;
-  const to = Number(weeks[1]) || from;
-  if (week < from || week > to) return false;
+
+  const ranges = Array.isArray(course.weekRanges) && course.weekRanges.length
+    ? course.weekRanges.map((range) => [Number(range[0]), Number(range[1])])
+    : [Array.isArray(course.weeks) && course.weeks.length ? course.weeks : [1, 18]];
+  const inRange = ranges.some(([from, to]) => week >= from && week <= to);
+  if (!inRange) return false;
+
   if (course.parity === 'odd' && week % 2 === 0) return false;
   if (course.parity === 'even' && week % 2 !== 0) return false;
   return true;
@@ -339,12 +342,16 @@ function parityOk(parity, week) {
 }
 
 function sharesAnyWeek(a, b) {
-  const [aFrom, aTo] = weekRange(a);
-  const [bFrom, bTo] = weekRange(b);
-  const from = Math.max(aFrom, bFrom);
-  const to = Math.min(aTo, bTo);
-  for (let w = from; w <= to; w += 1) {
-    if (parityOk(a.parity, w) && parityOk(b.parity, w)) return true;
+  const rangesA = Array.isArray(a.weekRanges) && a.weekRanges.length ? a.weekRanges : [weekRange(a)];
+  const rangesB = Array.isArray(b.weekRanges) && b.weekRanges.length ? b.weekRanges : [weekRange(b)];
+  for (const [aFrom, aTo] of rangesA) {
+    for (const [bFrom, bTo] of rangesB) {
+      const from = Math.max(Number(aFrom), Number(bFrom));
+      const to = Math.min(Number(aTo), Number(bTo));
+      for (let w = from; w <= to; w += 1) {
+        if (parityOk(a.parity, w) && parityOk(b.parity, w)) return true;
+      }
+    }
   }
   return false;
 }
