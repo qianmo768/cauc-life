@@ -106,8 +106,12 @@ app.innerHTML = `
           <button class="btn ghost icon sm reminder-btn" type="button" data-action="open-reminders" title="提醒">
             <span aria-hidden="true">🔔</span><span class="reminder-count" id="reminder-count"></span>
           </button>
-          <button class="btn ghost sm topbar-search" type="button" data-action="open-search" title="搜索（Ctrl+K）">
-            <span aria-hidden="true">🔍</span><span class="search-label">搜索</span><kbd>Ctrl K</kbd>
+          <button class="search-pill" type="button" data-action="open-search" title="搜索（Ctrl+K）">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" width="15" height="15" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path>
+            </svg>
+            <span class="search-pill-text">搜索</span>
+            <kbd>Ctrl K</kbd>
           </button>
           <button class="btn primary sm" data-action="quick-add">＋ 添加</button>
         </div>

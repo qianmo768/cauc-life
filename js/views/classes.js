@@ -17,6 +17,76 @@ function shortDate(dateStr) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+function formatClock(hhmm) {
+  if (!hhmm) return '';
+  const [h, m] = String(hhmm).split(':');
+  return `${Number(h)}:${m}`;
+}
+
+/** 把节次两两合并成「1~2 节」这样的行 */
+function buildBands(slots) {
+  const bands = [];
+  for (let i = 0; i < slots.length; i += 2) {
+    const first = slots[i];
+    const second = slots[i + 1] || slots[i];
+    bands.push({
+      label: slots[i + 1] ? `${first.index}~${second.index}节` : `${first.index}节`,
+      start: first.start,
+      end: second.end
+    });
+  }
+  return bands;
+}
+
+function currentWeek(state) {
+  const settings = state.data.settings;
+  const weekStart = settings.weekStart || 1;
+  const viewStart = addDays(startOfWeek(todayStr(), weekStart), offset * 7);
+  const dates = weekDates(viewStart, weekStart);
+  const week = weekOf(viewStart, settings.semesterStart, weekStart);
+  return { week, dates };
+}
+
+function parityName(parity) {
+  return { all: '每周', odd: '单周', even: '双周' }[parity] || '每周';
+}
+
+function openOtherCourses(store, rerender) {
+  const state = store.state;
+  const { week, dates } = currentWeek(state);
+  const others = (state.data.courses || []).filter(
+    (course) => !dates.some((d) => courseOccurs(course, d, week))
+  );
+
+  const body = others.length
+    ? `<p class="hint" style="margin-bottom:8px">这些课不在本周（第 ${week} 周）的课表里：</p>
+       <ul class="list">
+         ${others.map((course) => {
+           const weeks = course.weeks || [1, 18];
+           return `<li class="list-item">
+             <span class="tag course" style="--course:${esc(course.color || COLORS[0])}">${esc(course.name)}</span>
+             <span class="grow text-xs dim">第 ${weeks[0]}–${weeks[1]} 周 · ${parityName(course.parity)}</span>
+             <button class="btn sm" type="button" data-other-id="${esc(course.id)}">查看</button>
+           </li>`;
+         }).join('')}
+       </ul>`
+    : '<p class="text-sm dim">本周的课都在课表里了。</p>';
+
+  openModal({
+    title: '其他课程',
+    body,
+    onMount: (mask, { close }) => {
+      mask.querySelectorAll('[data-other-id]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const course = store.state.data.courses.find((c) => c.id === btn.dataset.otherId);
+          close();
+          if (course) openCourseDetail(course, store, rerender);
+        });
+      });
+    }
+  });
+}
+
 function statusOf(state, course, dateStr, now) {
   const times = courseTimes(state, course);
   const nowMin = nowMinutes(now);
@@ -44,27 +114,38 @@ export function render(state, ctx = {}) {
   const byDate = new Map(dates.map((d) => [d, courses.filter((c) => courseOccurs(c, d, week))]));
   const todayCourses = byDate.get(today) || [];
 
-  const headerCells = dates.map((d) => `
-    <div class="wg-head ${d === today ? 'today' : ''}">
-      <span>${weekdayName(weekdayIndex(d))}</span>
-      <span class="dim">${shortDate(d)}</span>
+  const bands = buildBands(slots);
+  const year = new Date(`${dates[0]}T00:00:00`).getFullYear();
+
+  const dayHeaders = dates.map((d) => `
+    <div class="tt-day ${d === today ? 'today' : ''}">
+      <span class="tt-day-name">${weekdayName(weekdayIndex(d)).replace('周', '')}</span>
+      <span class="tt-day-date">${shortDate(d)}</span>
     </div>`).join('');
 
-  const cells = slots.map((slot) => `
-    <div class="wg-slot num">${slot.index}</div>
-    ${dates.map((d) => `<div class="wg-cell ${d === today ? 'today-col' : ''}" data-slot="${slot.index}"></div>`).join('')}
+  const bandCells = bands.map((band) => `
+    <div class="tt-slot">
+      <span class="tt-slot-name">${esc(band.label)}</span>
+      <span class="tt-slot-time">${esc(formatClock(band.start))}</span>
+      <i class="tt-slot-line" aria-hidden="true"></i>
+      <span class="tt-slot-time">${esc(formatClock(band.end))}</span>
+    </div>
+    ${dates.map((d) => `<div class="tt-cell ${d === today ? 'today-col' : ''}"></div>`).join('')}
   `).join('');
 
   const blocks = [];
   for (const d of dates) {
     const col = ((weekdayIndex(d) - weekStart + 7) % 7) + 2;
     for (const course of byDate.get(d)) {
-      const span = Math.max(1, Number(course.endSlot) - Number(course.startSlot) + 1);
+      const startBand = Math.floor((Number(course.startSlot) - 1) / 2) + 1;
+      const endBand = Math.floor((Number(course.endSlot) - 1) / 2) + 1;
+      const span = Math.max(1, endBand - startBand + 1);
       blocks.push(`
         <button class="course-block" type="button" data-action="open-course" data-id="${esc(course.id)}"
-          style="grid-column:${col};grid-row:${Number(course.startSlot) + 1}/span ${span};--course:${esc(course.color || COLORS[0])}">
+          style="grid-column:${col};grid-row:${startBand + 1}/span ${span};--course:${esc(course.color || COLORS[0])}">
           <span class="cb-name">${esc(course.name)}</span>
-          <span class="cb-meta">${esc(course.location || '')}</span>
+          ${course.teacher ? `<span class="cb-teacher">${esc(course.teacher)}</span>` : ''}
+          ${course.location ? `<span class="cb-loc">${esc(course.location)}</span>` : ''}
         </button>`);
     }
   }
@@ -102,11 +183,21 @@ export function render(state, ctx = {}) {
 
       ${hasAny ? `
         <div class="card pad week-card">
-          <div class="week-scroll">
-            <div class="week-grid">
-              <div class="wg-corner"></div>
-              ${headerCells}
-              ${cells}
+          <div class="tt-top">
+            <button class="tt-other" type="button" data-action="other-courses">其他课程</button>
+            <div class="tt-title">${year} 年 · 第 ${week} 周课表</div>
+            <a class="tt-gear" href="#/settings" aria-label="课表设置" title="课表设置">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="20" height="20">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H9a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87V9a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"></path>
+              </svg>
+            </a>
+          </div>
+          <div class="tt-scroll">
+            <div class="tt-grid" style="grid-template-rows: 54px repeat(${bands.length}, minmax(104px, 1fr))">
+              <div class="tt-corner">节次</div>
+              ${dayHeaders}
+              ${bandCells}
               ${blocks.join('')}
             </div>
           </div>
@@ -366,6 +457,7 @@ export function bind(root, { store, rerender }) {
     else if (action === 'next-week') { offset += 1; rerender(); }
     else if (action === 'this-week') { offset = 0; rerender(); }
     else if (action === 'add-course') { openCourseForm(store, rerender); }
+    else if (action === 'other-courses') { openOtherCourses(store, rerender); }
     else if (action === 'fill-sample') { fillSample(store); }
     else if (action === 'open-course') {
       const course = store.state.data.courses.find((c) => c.id === el.dataset.id);
