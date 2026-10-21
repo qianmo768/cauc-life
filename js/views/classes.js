@@ -573,16 +573,18 @@ function openImportPreview(store, rerender, parsed) {
         <div class="form-grid">
           <div class="field">
             <label>学期起始日</label>
-            <input class="input" type="date" name="semesterStart" value="${esc(store.state.data.settings.semesterStart || '2026-08-30')}">
+            <input class="input" type="date" name="semesterStart" value="${esc(store.state.data.settings.semesterStart || '2026-08-31')}">
           </div>
           <div class="field">
             <label>一周从哪天开始</label>
             <select class="select" name="weekStart">
+              <option value="1" ${(store.state.data.settings.weekStart || 1) !== 7 ? 'selected' : ''}>周一</option>
               <option value="7" ${(store.state.data.settings.weekStart || 1) === 7 ? 'selected' : ''}>周日</option>
-              <option value="1" ${(store.state.data.settings.weekStart || 1) === 1 ? 'selected' : ''}>周一</option>
             </select>
           </div>
         </div>
+        ${parsed.courses.some((course) => course.weeksUnknown) ? `
+          <div class="callout danger">有 ${parsed.courses.filter((course) => course.weeksUnknown).length} 门课没读到周次，会按整学期显示，请导入后核对。</div>` : ''}
         <p class="hint">会替换上一次从教务导入的课程，手工添加的课程保留；冲突课程按你选的规则跳过。</p>
         <label class="row" style="gap:8px;align-items:center">
           <input type="checkbox" name="applySlots" checked>
@@ -595,8 +597,8 @@ function openImportPreview(store, rerender, parsed) {
     onMount: (mask, { close }) => {
       mask.querySelector('[data-cancel]').addEventListener('click', close);
       mask.querySelector('[data-confirm]').addEventListener('click', () => {
-        const semesterStart = mask.querySelector('[name="semesterStart"]').value || '2026-08-30';
-        const weekStart = Number(mask.querySelector('[name="weekStart"]').value) || 7;
+        const semesterStart = mask.querySelector('[name="semesterStart"]').value || '2026-08-31';
+        const weekStart = Number(mask.querySelector('[name="weekStart"]').value) || 1;
         const applySlots = mask.querySelector('[name="applySlots"]').checked;
         store.update((d) => {
           d.data.settings.semesterStart = semesterStart;

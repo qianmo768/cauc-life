@@ -28,15 +28,23 @@ function colorFor(name) {
   return PALETTE[hash % PALETTE.length];
 }
 
-/** 从 "3-5周,7-16周" 解析出 [[3,5],[7,16]] */
+/** 从 "3-5周,7-16周" 或 "第6周" 解析出 [[3,5],[7,16]] / [[6,6]] */
 export function parseWeekRanges(text) {
   const ranges = [];
-  const re = /(\d+)\s*-\s*(\d+)\s*周/g;
-  let match;
-  while ((match = re.exec(String(text || '')))) {
-    const from = Number(match[1]);
-    const to = Number(match[2]);
-    if (from >= 1 && to >= from) ranges.push([from, to]);
+  const tokens = String(text || '').split(/[,，、]/);
+  for (const token of tokens) {
+    const range = /(\d+)\s*[-–~]\s*(\d+)/.exec(token);
+    if (range) {
+      const from = Number(range[1]);
+      const to = Number(range[2]);
+      if (from >= 1 && to >= from) ranges.push([from, to]);
+      continue;
+    }
+    const single = /第?\s*(\d+)\s*周/.exec(token) || /^\s*(\d+)\s*$/.exec(token);
+    if (single) {
+      const week = Number(single[1]);
+      if (week >= 1) ranges.push([week, week]);
+    }
   }
   return ranges;
 }
@@ -68,14 +76,19 @@ function parseCourseBlock(block, position) {
   if (!name) return null;
 
   const plain = stripTags(block);
-  const slotMatch = /\((\d+)\s*-\s*(\d+)\s*节\)\s*([\d,\-周\s]*)/.exec(plain);
+  const scheduleText = findField(block, '节/周') || plain;
+  const slotMatch = /\((\d+)\s*-\s*(\d+)\s*节\)/.exec(scheduleText);
   const startSlot = slotMatch ? Number(slotMatch[1]) : position.startSlot;
   const endSlot = slotMatch ? Number(slotMatch[2]) : position.endSlot;
-  const weekText = slotMatch ? slotMatch[3] : '';
+  const weekText = scheduleText.replace(/\((\d+)\s*-\s*(\d+)\s*节\)/, '');
   let ranges = parseWeekRanges(weekText);
+  let weeksUnknown = false;
 
-  // 没有解析到周次时，按整学期处理，避免课程消失
-  if (!ranges.length) ranges = [[1, 18]];
+  // 没解析到周次时标记出来，导入预览会提示
+  if (!ranges.length) {
+    ranges = [[1, 18]];
+    weeksUnknown = true;
+  }
 
   return {
     name,
@@ -86,6 +99,7 @@ function parseCourseBlock(block, position) {
     endSlot,
     weeks: [ranges[0][0], ranges[ranges.length - 1][1]],
     weekRanges: ranges,
+    weeksUnknown,
     parity: 'all',
     color: colorFor(name),
     skips: [],
