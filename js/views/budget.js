@@ -8,6 +8,8 @@ import { makeTrashEntry } from '../core/trash.js';
 import {
   accountsOf, accountName, accountOfExpense, accountTotals, parseBillCsv, mapBillAccounts
 } from '../core/accounts.js';
+import { mapBillAccounts as mapWeChatAccounts, planBillImport, buildBillExpenses } from '../core/billImport.js';
+import { api } from '../api.js';
 
 let monthKey = monthKeyOf(todayStr());
 let accountFilter = 'all';
@@ -63,6 +65,7 @@ export function render(state, ctx = {}) {
         </div>
         <div class="row wrap" style="gap:8px">
           <button class="btn sm" type="button" data-action="import-bills">导入账单</button>
+          <button class="btn sm" type="button" data-action="import-wechat">导入微信账单</button>
           <button class="btn sm" type="button" data-action="manage-accounts">账户</button>
           <button class="btn primary sm" type="button" data-action="add">＋ 记一笔</button>
         </div>
@@ -86,6 +89,7 @@ export function render(state, ctx = {}) {
         </div>
         <div class="budget-stats">
           <div class="stat"><span class="value num">${fmtMoney(totals.spent)}</span><span class="label">已花</span></div>
+          <div class="stat"><span class="value num" style="color:var(--ok)">${fmtMoney(totals.income || 0)}</span><span class="label">收入</span></div>
           <div class="stat">
             <span class="value num" style="color:${overspent ? 'var(--danger)' : totals.remaining < totals.total * 0.2 ? 'var(--warn)' : 'inherit'}">
               ${totals.remaining >= 0 ? fmtMoney(totals.remaining) : `-${fmtMoney(-totals.remaining)}`}
@@ -111,6 +115,10 @@ export function render(state, ctx = {}) {
             <select class="select" name="category">
               ${BUDGET_CATEGORIES.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
             </select>
+            <select class="select" name="kind">
+              <option value="expense">支出</option>
+              <option value="income">收入</option>
+            </select>
             <select class="select" name="accountId">
               ${accounts.map((account) => `<option value="${esc(account.id)}" ${accountFilter === account.id ? 'selected' : ''}>${esc(account.name)}</option>`).join('')}
             </select>
@@ -132,10 +140,10 @@ export function render(state, ctx = {}) {
             <ul class="expense-list">
               ${group.items.map((item) => `
                 <li class="expense-row">
-                  <span class="tag">${esc(item.category || '其他')}</span>
+                  <span class="tag">${esc(item.kind === 'income' ? '收入' : (item.category || '其他'))}</span>
                   <span class="tag">${esc(accountName(state, accountOfExpense(item)))}</span>
                   <span class="grow">${esc(item.note || '—')}</span>
-                  <span class="num strong">${fmtMoney(item.amount)}</span>
+                  <span class="num strong" style="color:${item.kind === 'income' ? 'var(--ok)' : 'inherit'}">${item.kind === 'income' ? '+' : ''}${fmtMoney(item.amount)}</span>
                   <button class="btn ghost icon sm" type="button" data-action="edit" data-id="${esc(item.id)}" aria-label="编辑">✎</button>
                   <button class="btn ghost icon sm" type="button" data-action="del" data-id="${esc(item.id)}" aria-label="删除">🗑</button>
                 </li>`).join('')}
@@ -192,7 +200,7 @@ function openBudgetEditor(store, rerender) {
 }
 
 function openExpenseForm(store, rerender, existing = null) {
-  const item = existing || { amount: '', category: BUDGET_CATEGORIES[0], date: todayStr(), note: '' };
+  const item = existing || { amount: '', category: BUDGET_CATEGORIES[0], date: todayStr(), note: '', kind: 'expense' };
   const { close } = openModal({
     title: existing ? '编辑这笔' : '记一笔',
     body: `
@@ -202,6 +210,13 @@ function openExpenseForm(store, rerender, existing = null) {
           <input class="input" type="number" name="amount" step="0.01" min="0.01" value="${esc(item.amount)}">
         </div>
         <div class="form-grid">
+          <div class="field">
+            <label>类型</label>
+            <select class="select" name="kind">
+              <option value="expense" ${item.kind !== 'income' ? 'selected' : ''}>支出</option>
+              <option value="income" ${item.kind === 'income' ? 'selected' : ''}>收入</option>
+            </select>
+          </div>
           <div class="field">
             <label>分类</label>
             <select class="select" name="category">
@@ -235,6 +250,7 @@ function openExpenseForm(store, rerender, existing = null) {
         }
         const patch = {
           amount: Math.round(amount * 100) / 100,
+          kind: form.elements.kind.value,
           category: form.elements.category.value,
           date: form.elements.date.value || todayStr(),
           note: form.elements.note.value.trim()
@@ -335,6 +351,90 @@ function importBills(store, rerender) {
   input.click();
 }
 
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error('文件读取失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function importWechatBill(store, rerender) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx';
+  input.addEventListener('change', async () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (file.size > 8 * 1024 * 1024) {
+      toast('文件不能超过 8 MB', { tone: 'error' });
+      return;
+    }
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const result = await api.previewBill(dataUrl);
+      if (!result.ok) throw new Error(result.error || '解析失败');
+      openBillPreview(store, rerender, result);
+    } catch (err) {
+      toast(`解析失败：${err.message}`, { tone: 'error', duration: 4000 });
+    }
+  });
+  input.click();
+}
+
+function openBillPreview(store, rerender, parsed) {
+  const plan = planBillImport(store.state.data.budget.expenses, parsed.transactions);
+  const summary = parsed.summary || {};
+
+  const categoryCount = {};
+  for (const item of plan.fresh) categoryCount[item.category] = (categoryCount[item.category] || 0) + 1;
+  const accountNames = [...new Set(plan.fresh.map((item) => item.accountName || '微信零钱'))];
+
+  const { close } = openModal({
+    title: '导入微信账单',
+    wide: true,
+    body: `
+      <div class="stack">
+        <div class="row" style="gap:20px;flex-wrap:wrap">
+          <div class="stat"><span class="value num">${summary.expenseCount || 0}</span><span class="label">支出笔数</span></div>
+          <div class="stat"><span class="value num">${fmtMoney(summary.expenseTotal || 0)}</span><span class="label">支出合计</span></div>
+          <div class="stat"><span class="value num" style="color:var(--ok)">${fmtMoney(summary.incomeTotal || 0)}</span><span class="label">收入合计</span></div>
+          <div class="stat"><span class="value num" style="color:${plan.duplicates ? 'var(--warn)' : 'inherit'}">${plan.duplicates}</span><span class="label">重复跳过</span></div>
+          <div class="stat"><span class="value num">${summary.neutralSkipped || 0}</span><span class="label">中性跳过</span></div>
+        </div>
+        <div class="row wrap" style="gap:6px">
+          ${Object.entries(categoryCount).sort((a, b) => b[1] - a[1]).map(([category, count]) => `<span class="chip">${esc(category)} ${count}</span>`).join('')}
+        </div>
+        <p class="hint">将新增 ${plan.fresh.length} 笔；账户：${accountNames.map((name) => esc(name)).join('、') || '无'}。重复导入会按交易单号跳过。</p>
+      </div>
+    `,
+    footer: `<button class="btn" type="button" data-cancel>取消</button>
+             <button class="btn primary" type="button" data-confirm>确认导入</button>`,
+    onMount: (mask, { close }) => {
+      mask.querySelector('[data-cancel]').addEventListener('click', close);
+      mask.querySelector('[data-confirm]').addEventListener('click', () => {
+        if (!plan.fresh.length) {
+          close();
+          toast('没有需要新增的记录');
+          return;
+        }
+        store.update((d) => {
+          const mapped = mapWeChatAccounts(d.data.budget.accounts || [], plan.fresh);
+          d.data.budget.accounts = mapped.accounts;
+          d.data.budget.expenses = [
+            ...(d.data.budget.expenses || []),
+            ...buildBillExpenses(mapped.transactions)
+          ];
+        });
+        close();
+        rerender();
+        toast(`已导入 ${plan.fresh.length} 笔`);
+      });
+    }
+  });
+}
+
 export function bind(root, { store, rerender }) {  root.addEventListener('click', async (event) => {
     const el = event.target.closest('[data-action]');
     if (!el) return;
@@ -352,6 +452,7 @@ export function bind(root, { store, rerender }) {  root.addEventListener('click'
     }
     if (action === 'manage-accounts') { openAccounts(store, rerender); return; }
     if (action === 'import-bills') { importBills(store, rerender); return; }
+    if (action === 'import-wechat') { importWechatBill(store, rerender); return; }
 
     const id = el.dataset.id;
     const item = (store.state.data.budget.expenses || []).find((e) => e.id === id);
@@ -388,6 +489,7 @@ export function bind(root, { store, rerender }) {  root.addEventListener('click'
           id: uid('e'),
           amount: Math.round(amount * 100) / 100,
           category: form.elements.category.value,
+          kind: form.elements.kind ? form.elements.kind.value : 'expense',
           accountId: form.elements.accountId ? form.elements.accountId.value : undefined,
           date,
           note: form.elements.note.value.trim()

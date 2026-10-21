@@ -136,12 +136,19 @@ export function fitnessStreak(state, dateStr = todayStr()) {
   return streak;
 }
 
+export function isIncome(item) {
+  return Boolean(item) && item.kind === 'income';
+}
+
 export function budgetMonth(state, monthKey) {
   const conf = (state.data.budget.months || {})[monthKey] || { total: 0, categories: {} };
   const expenses = (state.data.budget.expenses || []).filter((e) => String(e.date || '').slice(0, 7) === monthKey);
-  const spent = sum(expenses, (e) => e.amount);
+  const spending = expenses.filter((e) => !isIncome(e));
+  const incomes = expenses.filter(isIncome);
+  const spent = sum(spending, (e) => e.amount);
+  const incomeTotal = sum(incomes, (e) => e.amount);
   const byCategory = {};
-  for (const e of expenses) {
+  for (const e of spending) {
     const key = e.category || '其他';
     byCategory[key] = (byCategory[key] || 0) + (Number(e.amount) || 0);
   }
@@ -149,11 +156,14 @@ export function budgetMonth(state, monthKey) {
   return {
     total,
     spent,
+    incomeTotal,
     remaining: total - spent,
     percent: total > 0 ? Math.round((spent / total) * 100) : 0,
     categories: conf.categories || {},
     byCategory,
-    expenses
+    expenses,
+    spending,
+    incomes
   };
 }
 
@@ -575,7 +585,12 @@ export function expensesByDate(expenses) {
     map.get(date).push(item);
   }
   return [...map.entries()]
-    .map(([date, items]) => ({ date, items, total: sum(items, (i) => i.amount) }))
+    .map(([date, items]) => ({
+      date,
+      items,
+      total: sum(items.filter((i) => !isIncome(i)), (i) => i.amount),
+      income: sum(items.filter(isIncome), (i) => i.amount)
+    }))
     .sort((a, b) => String(b.date).localeCompare(String(a.date)));
 }
 
@@ -584,6 +599,7 @@ export function expenseTotals(state, monthKey) {
   return {
     total: month.total,
     spent: month.spent,
+    income: month.incomeTotal,
     remaining: month.remaining,
     overspent: month.total > 0 && month.spent > month.total
   };
@@ -735,7 +751,7 @@ export function expenseMonthlySeries(state, months = 6, dateStr = todayStr()) {
   for (let i = months - 1; i >= 0; i -= 1) {
     const key = addMonths(base, -i);
     const total = sum(
-      (state.data.budget.expenses || []).filter((e) => String(e.date || '').slice(0, 7) === key),
+      (state.data.budget.expenses || []).filter((e) => String(e.date || '').slice(0, 7) === key && !isIncome(e)),
       (e) => e.amount
     );
     out.push({ label: `${Number(key.slice(5))}月`, key, total });
@@ -769,7 +785,7 @@ export function yearMonthlySeries(state, year) {
   for (let month = 1; month <= 12; month += 1) {
     const key = `${year}-${String(month).padStart(2, '0')}`;
     const total = sum(
-      (state.data.budget.expenses || []).filter((e) => String(e.date || '').slice(0, 7) === key),
+      (state.data.budget.expenses || []).filter((e) => String(e.date || '').slice(0, 7) === key && !isIncome(e)),
       (e) => e.amount
     );
     out.push({ label: `${month}月`, key, total });

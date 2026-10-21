@@ -19,7 +19,7 @@ export function accountOfExpense(expense) {
 
 export function accountTotals(state, monthKey) {
   const expenses = (state.data.budget.expenses || []).filter(
-    (item) => String(item.date || '').slice(0, 7) === monthKey
+    (item) => String(item.date || '').slice(0, 7) === monthKey && item.kind !== 'income'
   );
   const totals = new Map();
   for (const account of accountsOf(state)) totals.set(account.id, 0);

@@ -45,6 +45,9 @@ export const api = {
   async saveNow() {
     return (await request('/api/save', { method: 'POST' })).json();
   },
+  async previewBill(dataUrl) {
+    return (await request('/api/bill/preview', jsonInit('POST', { dataUrl }))).json();
+  },
   exportUrl() {
     return '/api/export';
   },
