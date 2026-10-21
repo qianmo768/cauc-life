@@ -25,6 +25,7 @@ export const NAV_ACTIONS = [
   { title: '健身计划', route: 'fitness', keywords: 'fitness 健身 训练 打卡' },
   { title: '每月花销规划', route: 'budget', keywords: 'budget 花销 预算 记账' },
   { title: '游戏娱乐', route: 'fun', keywords: 'fun 娱乐 游戏 计时' },
+  { title: '统计', route: 'stats', keywords: 'stats 统计 图表 趋势 复盘' },
   { title: '数据与设置', route: 'settings', keywords: 'settings 设置 备份 主题' }
 ];
 

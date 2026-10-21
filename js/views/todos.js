@@ -1,6 +1,6 @@
 import { esc, uid } from '../core/html.js';
 import { todayStr, weekdayName, startOfWeek, addDays } from '../core/date.js';
-import { groupTodos, reorderTodos, todoDueLabel } from '../core/calc.js';
+import { groupTodos, reorderTodos, todoDueLabel, buildNextOccurrence, formatRepeat } from '../core/calc.js';
 import { openModal } from '../ui/modal.js';
 import { showUndo } from '../ui/undo.js';
 import { toast } from '../ui/toast.js';
@@ -37,6 +37,7 @@ function todoItem(todo, today) {
         <div class="todo-meta">
           ${todo.dueDate ? `<span class="text-xs ${overdue ? 'overdue' : 'dim'}">${esc(todoDueLabel(todo.dueDate, today))}</span>` : ''}
           ${priorityBadge(todo.priority)}
+          ${todo.repeat && todo.repeat !== 'none' ? `<span class="badge muted">${formatRepeat(todo.repeat)}</span>` : ''}
           ${todo.note ? `<span class="text-xs dim">· ${esc(todo.note)}</span>` : ''}
         </div>
       </div>
@@ -159,6 +160,14 @@ function todoFormHtml(todo) {
             <option value="low" ${todo.priority === 'low' ? 'selected' : ''}>低</option>
           </select>
         </div>
+        <div class="field">
+          <label>重复</label>
+          <select class="select" name="repeat">
+            <option value="none" ${!todo.repeat || todo.repeat === 'none' ? 'selected' : ''}>不重复</option>
+            <option value="daily" ${todo.repeat === 'daily' ? 'selected' : ''}>每天</option>
+            <option value="weekly" ${todo.repeat === 'weekly' ? 'selected' : ''}>每周</option>
+          </select>
+        </div>
       </div>
       <div class="field">
         <label>备注</label>
@@ -190,6 +199,7 @@ function openTodoForm(store, rerender, existing) {
           title,
           dueDate: form.elements.dueDate.value || null,
           priority: form.elements.priority.value,
+          repeat: form.elements.repeat.value || 'none',
           note: form.elements.note.value.trim(),
           updatedAt: new Date().toISOString()
         };
@@ -328,6 +338,19 @@ export function bind(root, { store, rerender }) {
         todo.done = box.checked;
         todo.doneAt = box.checked ? new Date().toISOString() : null;
         todo.updatedAt = new Date().toISOString();
+
+        // 完成重复待办后，自动生成下一次
+        if (box.checked) {
+          const next = buildNextOccurrence(todo, todayStr());
+          if (next) {
+            const exists = d.data.todos.some(
+              (t) => t.seriesId === next.seriesId && t.dueDate === next.dueDate && !t.done
+            );
+            if (!exists) {
+              d.data.todos.push({ id: uid('t'), ...next, updatedAt: new Date().toISOString() });
+            }
+          }
+        }
       });
     });
   });

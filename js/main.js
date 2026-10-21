@@ -5,6 +5,7 @@ import { toast } from './ui/toast.js';
 import { openDrawer, closeDrawer } from './ui/drawer.js';
 import { closeModal } from './ui/modal.js';
 import { openCommandPalette, openShortcutsHelp } from './ui/command.js';
+import { openReminderCenter, reminderCount } from './ui/reminders.js';
 import { icon, esc, uid } from './core/html.js';
 import { timerElapsed } from './core/calc.js';
 import { todayStr } from './core/date.js';
@@ -19,6 +20,7 @@ import * as fitness from './views/fitness.js';
 import * as budget from './views/budget.js';
 import * as fun from './views/fun.js';
 import * as settings from './views/settings.js';
+import * as stats from './views/stats.js';
 
 const ICONS = {
   home: icon('<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>'),
@@ -28,6 +30,7 @@ const ICONS = {
   fitness: icon('<path d="M6 7v10M18 7v10M3 9v6M21 9v6M6 12h12"/>'),
   budget: icon('<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="15" r="1"/>'),
   fun: icon('<rect x="2" y="7" width="20" height="11" rx="5"/><path d="M7 10v4M5 12h4"/><circle cx="16" cy="11.5" r="1"/><circle cx="18" cy="13.5" r="1"/>'),
+  stats: icon('<path d="M4 20V10M9.5 20V4M15 20v-6M20.5 20V8"/>'),
   settings: icon('<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/>')
 };
 
@@ -39,6 +42,7 @@ export const NAV = [
   { name: 'fitness', label: '健身', title: '健身计划', sub: '练什么、练了没、坚持了多久', icon: ICONS.fitness },
   { name: 'budget', label: '花销', title: '每月花销规划', sub: '预算、记账、还剩多少', icon: ICONS.budget },
   { name: 'fun', label: '娱乐', title: '游戏娱乐', sub: '给玩乐留时间，也知道玩了多久', icon: ICONS.fun },
+  { name: 'stats', label: '统计', title: '统计', sub: '近况一眼看清', icon: ICONS.stats },
   { name: 'settings', label: '设置', title: '数据与设置', sub: '备份、主题与偏好', icon: ICONS.settings }
 ];
 
@@ -58,6 +62,7 @@ const VIEWS = {
   fitness,
   budget,
   fun,
+  stats,
   settings
 };
 
@@ -98,6 +103,9 @@ app.innerHTML = `
           <div class="sub" id="page-sub"></div>
         </div>
         <div class="row" style="gap:8px">
+          <button class="btn ghost icon sm reminder-btn" type="button" data-action="open-reminders" title="提醒">
+            <span aria-hidden="true">🔔</span><span class="reminder-count" id="reminder-count"></span>
+          </button>
           <button class="btn ghost sm topbar-search" type="button" data-action="open-search" title="搜索（Ctrl+K）">
             <span aria-hidden="true">🔍</span><span class="search-label">搜索</span><kbd>Ctrl K</kbd>
           </button>
@@ -162,6 +170,13 @@ function renderRoute(name) {
   subEl.textContent = item.sub;
   setActive(name);
 
+  const countEl = document.getElementById('reminder-count');
+  if (countEl) {
+    const count = reminderCount(store.state);
+    countEl.textContent = count ? String(count) : '';
+    countEl.classList.toggle('show', count > 0);
+  }
+
   const view = VIEWS[name] || VIEWS.home;
   const active = document.activeElement;
   const focusKey = active && active.dataset ? active.dataset.focusKey : null;
@@ -206,7 +221,7 @@ document.addEventListener('click', (event) => {
   const more = event.target.closest('[data-action="open-more"]');
   if (more) {
     event.preventDefault();
-    const items = NAV.filter((n) => ['homework', 'fitness', 'budget', 'fun', 'settings'].includes(n.name));
+    const items = NAV.filter((n) => ['homework', 'fitness', 'budget', 'fun', 'stats', 'settings'].includes(n.name));
     openDrawer(items, (name) => router.go(name));
     return;
   }
@@ -215,6 +230,13 @@ document.addEventListener('click', (event) => {
   if (search) {
     event.preventDefault();
     openCommandPalette(store, { go: (name) => router.go(name) });
+    return;
+  }
+
+  const reminders = event.target.closest('[data-action="open-reminders"]');
+  if (reminders) {
+    event.preventDefault();
+    openReminderCenter(store.state, { go: (name) => router.go(name) });
     return;
   }
 

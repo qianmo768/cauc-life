@@ -1,7 +1,8 @@
 // 首页与各模块共用的取数逻辑（纯函数，不碰 DOM）
 import {
   todayStr, weekdayIndex, weekOf, weekDates, addDays, parseTime,
-  nowMinutes, diffDays, fmtDateCN, fmtMoney, fmtDuration, startOfWeek
+  nowMinutes, diffDays, fmtDateCN, fmtMoney, fmtDuration, startOfWeek,
+  monthKeyOf, addMonths
 } from './date.js';
 import { sum } from './html.js';
 
@@ -633,6 +634,128 @@ export function dataCounts(state) {
     expenses: (d.budget.expenses || []).length,
     funRecords: (d.fun.records || []).length,
     wishlist: (d.fun.wishlist || []).length
+  };
+}
+
+// ---------- 重复待办 ----------
+
+export const REPEAT_LABELS = { none: '不重复', daily: '每天', weekly: '每周' };
+
+export function formatRepeat(repeat) {
+  return REPEAT_LABELS[repeat] || '不重复';
+}
+
+/** 完成一条重复待办后，下一次要生成的内容（不含 id） */
+export function buildNextOccurrence(todo, dateStr = todayStr()) {
+  if (!todo || !todo.repeat || todo.repeat === 'none') return null;
+  const base = todo.dueDate || dateStr;
+  const step = todo.repeat === 'weekly' ? 7 : 1;
+  return {
+    title: todo.title,
+    note: todo.note || '',
+    dueDate: addDays(base, step),
+    planDate: null,
+    priority: todo.priority || 'mid',
+    repeat: todo.repeat,
+    seriesId: todo.seriesId || todo.id,
+    done: false,
+    doneAt: null,
+    order: Date.now()
+  };
+}
+
+// ---------- 提醒中心 ----------
+
+export function collectReminders(state, now = new Date(), dateStr = todayStr()) {
+  const list = [];
+
+  for (const item of state.data.assignments || []) {
+    if (item.status === 'submitted') continue;
+    const date = String(item.dueAt || '').slice(0, 10);
+    if (!date) continue;
+    const left = diffDays(dateStr, date);
+    if (left < 0) {
+      list.push({ type: '作业', title: item.title, sub: `已逾期 ${-left} 天`, route: 'homework', tone: 'danger' });
+    } else if (left === 0) {
+      list.push({ type: '作业', title: item.title, sub: '今天截止', route: 'homework', tone: 'warn' });
+    }
+  }
+
+  for (const todo of state.data.todos || []) {
+    if (todo.done || !todo.dueDate) continue;
+    const left = diffDays(dateStr, todo.dueDate);
+    if (left < 0) {
+      list.push({ type: '待办', title: todo.title, sub: `逾期 ${-left} 天`, route: 'todos', tone: 'danger' });
+    }
+  }
+
+  const upcoming = nextCourse(state, dateStr, now);
+  if (upcoming && !upcoming.ongoing && upcoming.minutesLeft <= 30) {
+    list.push({
+      type: '课程',
+      title: upcoming.course.name,
+      sub: `${upcoming.start} 开始（还有 ${upcoming.minutesLeft} 分钟）`,
+      route: 'classes',
+      tone: 'brand'
+    });
+  }
+
+  return list;
+}
+
+// ---------- 统计 ----------
+
+export function fitnessWeeklySeries(state, weeks = 8, dateStr = todayStr()) {
+  const { weekStart } = weekInfo(state, dateStr);
+  const thisWeek = startOfWeek(dateStr, weekStart);
+  const logs = (state.data.fitness.logs || []).filter((log) => log.done);
+  const out = [];
+  for (let i = weeks - 1; i >= 0; i -= 1) {
+    const start = addDays(thisWeek, -7 * i);
+    const dates = new Set(weekDates(start, weekStart));
+    out.push({
+      label: fmtDateCN(start).replace('月', '/').replace('日', ''),
+      start,
+      count: logs.filter((log) => dates.has(log.date)).length
+    });
+  }
+  return out;
+}
+
+export function expenseMonthlySeries(state, months = 6, dateStr = todayStr()) {
+  const base = monthKeyOf(dateStr);
+  const out = [];
+  for (let i = months - 1; i >= 0; i -= 1) {
+    const key = addMonths(base, -i);
+    const total = sum(
+      (state.data.budget.expenses || []).filter((e) => String(e.date || '').slice(0, 7) === key),
+      (e) => e.amount
+    );
+    out.push({ label: `${Number(key.slice(5))}月`, key, total });
+  }
+  return out;
+}
+
+export function funDailySeries(state, days = 7, dateStr = todayStr()) {
+  const out = [];
+  for (let i = days - 1; i >= 0; i -= 1) {
+    const date = addDays(dateStr, -i);
+    const total = sum(
+      (state.data.fun.records || []).filter((r) => r.date === date),
+      (r) => r.minutes
+    );
+    out.push({ label: date.slice(5).replace('-', '/'), date, minutes: total });
+  }
+  return out;
+}
+
+export function assignmentMonthStats(state, monthKey = monthKeyOf(todayStr())) {
+  const items = (state.data.assignments || []).filter((a) => String(a.dueAt || '').slice(0, 7) === monthKey);
+  const submitted = items.filter((a) => a.status === 'submitted').length;
+  return {
+    total: items.length,
+    submitted,
+    percent: items.length ? Math.round((submitted / items.length) * 100) : 0
   };
 }
 
