@@ -19,7 +19,7 @@ export function parseAssignmentText(text, now = new Date()) {
   const raw = String(text || '');
   const lines = raw.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 
-  const match = /作答时间\s*[：:]\s*(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})\s*至\s*(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{2})/.exec(raw);
+  const match = /作答时间\s*[：:]\s*(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})\s*至\s*(\d{1,2})-(\d{1,2})\s+(\d{1,2}):(\d{1,2})/.exec(raw);
 
   let startAt = null;
   let dueAt = null;
