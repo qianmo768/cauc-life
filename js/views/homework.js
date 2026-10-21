@@ -9,6 +9,7 @@ import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
 import { makeTrashEntry } from '../core/trash.js';
 import { api } from '../api.js';
+import { parseAssignmentText } from '../core/assignments.js';
 
 let viewMode = 'due';
 let statusFilter = 'all';
@@ -87,6 +88,7 @@ export function render(state, ctx = {}) {
               <button type="button" class="${viewMode === 'due' ? 'active' : ''}" data-action="view" data-value="due">按截止</button>
               <button type="button" class="${viewMode === 'course' ? 'active' : ''}" data-action="view" data-value="course">按课程</button>
             </div>
+            <button class="btn sm" type="button" data-action="paste-import">粘贴导入</button>
             <button class="btn primary sm" type="button" data-action="add">＋ 添加作业</button>
           </div>
         </div>
@@ -287,6 +289,79 @@ function setStatus(store, rerender, id, status) {
   rerender();
 }
 
+function openPasteImport(store, rerender) {
+  const courses = store.state.data.courses || [];
+  const options = [
+    ...courses.map((course) => `<option value="${esc(course.name)}">${esc(course.name)}</option>`),
+    '<option value="">未分类</option>'
+  ].join('');
+
+  const { close } = openModal({
+    title: '粘贴导入作业',
+    wide: true,
+    body: `
+      <div class="stack">
+        <p class="hint">在学习通里打开作业详情，Ctrl+A 全选复制，粘贴到下面。只会读取作业名和「作答时间」，其它内容不保存。</p>
+        <div class="field">
+          <label>课程</label>
+          <select class="select" name="course">${options}</select>
+        </div>
+        <div class="field">
+          <label>详情页文字</label>
+          <textarea class="textarea" name="text" style="min-height:140px" placeholder="作业20261020 (2.1)
+作答时间：10-20 10:52 至 10-22 13:30"></textarea>
+        </div>
+        <p class="err hidden" data-error></p>
+      </div>
+    `,
+    footer: `<button class="btn" type="button" data-cancel>取消</button>
+             <button class="btn primary" type="button" data-save>解析并导入</button>`,
+    onMount: (mask, { close }) => {
+      mask.querySelector('[data-cancel]').addEventListener('click', close);
+      mask.querySelector('[data-save]').addEventListener('click', () => {
+        const err = mask.querySelector('[data-error]');
+        const error = (message) => {
+          err.textContent = message;
+          err.classList.remove('hidden');
+        };
+
+        const courseName = mask.querySelector('[name="course"]').value || '未分类';
+        const parsed = parseAssignmentText(mask.querySelector('[name="text"]').value);
+
+        if (!parsed.title) { error('没认出作业名，请把详情页顶部的标题一起复制'); return; }
+        if (!parsed.matched) { error('没找到「作答时间」，请把含日期的整行一起复制'); return; }
+
+        store.update((d) => {
+          const list = d.data.assignments || [];
+          const existing = list.find((item) => item.courseName === courseName && item.title === parsed.title);
+          if (existing) {
+            existing.startAt = parsed.startAt;
+            existing.dueAt = parsed.dueAt;
+            existing.updatedAt = new Date().toISOString();
+          } else {
+            list.push({
+              id: uid('a'),
+              courseName,
+              courseId: null,
+              title: parsed.title,
+              startAt: parsed.startAt,
+              dueAt: parsed.dueAt,
+              status: 'todo',
+              submittedAt: null,
+              note: '',
+              attachments: [],
+              updatedAt: new Date().toISOString()
+            });
+          }
+        });
+        close();
+        rerender();
+        toast('作业已导入');
+      });
+    }
+  });
+}
+
 export function bind(root, { store, rerender }) {
   root.addEventListener('click', async (event) => {
     const el = event.target.closest('[data-action]');
@@ -297,6 +372,7 @@ export function bind(root, { store, rerender }) {
     if (action === 'view') { viewMode = el.dataset.value; rerender(); return; }
     if (action === 'filter') { statusFilter = el.dataset.value; rerender(); return; }
     if (action === 'add') { openForm(store, rerender); return; }
+    if (action === 'paste-import') { openPasteImport(store, rerender); return; }
 
     const item = store.state.data.assignments.find((a) => a.id === id);
     if (!item && action !== 'add') return;
