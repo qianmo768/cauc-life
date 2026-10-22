@@ -1,4 +1,5 @@
-import { api } from './api.js';
+import { api, setMode } from './api.js';
+import { requestPersist } from './core/localdb.js';
 import { Store } from './store.js';
 import { createRouter } from './router.js';
 import { toast } from './ui/toast.js';
@@ -332,8 +333,30 @@ function purgeOldTrash(db) {
   return db.data.trash.length !== before;
 }
 
+async function detectMode() {
+  try {
+    const res = await fetch('/api/info', { cache: 'no-store' });
+    if (res.ok) {
+      const info = await res.json();
+      if (info && (info.mode === 'server' || typeof info.version !== 'undefined')) return 'server';
+    }
+  } catch {
+    /* 没有服务端，走本地模式 */
+  }
+  return 'local';
+}
+
 async function boot() {
   try {
+    const mode = await detectMode();
+    setMode(mode);
+    if (mode === 'local') {
+      requestPersist().catch(() => {});
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      }
+    }
+
     const db = await api.getDb();
     applyTheme(db.data.settings.theme);
     applyBackground(db.data.settings);
@@ -347,17 +370,19 @@ async function boot() {
     }
     router.start();
   } catch (err) {
+    const local = api.isLocal();
     viewEl.innerHTML = `
       <div class="card pad">
         <div class="empty">
           <div class="empty-icon">🫧</div>
-          <p class="text-lg strong">连不上本机服务</p>
-          <p class="text-sm dim">${esc(err.message || '请先启动 server.js，再刷新页面。')}</p>
-          <p class="text-xs dim">在项目目录运行：node server.js</p>
+          <p class="text-lg strong">${local ? '读取本地数据失败' : '连不上本机服务'}</p>
+          <p class="text-sm dim">${esc(err.message || (local ? '请检查浏览器是否允许本地存储。' : '请先启动 server.js，再刷新页面。'))}</p>
+          <p class="text-xs dim">${local ? '手机端数据保存在浏览器里。' : '在项目目录运行：node server.js'}</p>
         </div>
       </div>
     `;
   }
 }
 
+// 本地模式（PWA）才注册离线缓存，避免电脑开发时被旧缓存卡住
 boot();

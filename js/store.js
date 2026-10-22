@@ -16,6 +16,15 @@ export class Store {
     this._emit();
   }
 
+  /** 整体替换（导入备份用）：立即通知并安排保存 */
+  replace(db) {
+    this._state = db;
+    this._dirty = true;
+    this._emit();
+    this._schedule();
+    return db;
+  }
+
   get state() {
     return this._state;
   }

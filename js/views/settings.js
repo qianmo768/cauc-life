@@ -7,6 +7,7 @@ import { TRASH_KIND_LABELS, insertItem } from '../core/trash.js';
 import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
+import { mergeDb } from '../core/merge.js';
 
 function countText(counts) {
   const rows = [
@@ -48,9 +49,9 @@ export function render(state, ctx = {}) {
         <div class="row wrap">
           <button class="btn primary" type="button" data-action="export">导出备份</button>
           <button class="btn" type="button" data-action="import">导入备份</button>
-          <button class="btn" type="button" data-action="restore">从自动快照恢复</button>
+          ${api.isLocal() ? '' : '<button class="btn" type="button" data-action="restore">从自动快照恢复</button>'}
         </div>
-        <p class="hint" style="margin-top:8px">数据保存在本机，建议每周导出一次。</p>
+        <p class="hint" style="margin-top:8px">${api.isLocal() ? '数据存在手机浏览器里，建议每周导出一次备份。' : '数据保存在本机，建议每周导出一次。'}</p>
       </section>
 
       <section class="card pad">
@@ -112,11 +113,13 @@ export function render(state, ctx = {}) {
       </section>
 
       <section class="card pad">
-        <div class="card-title"><h3>手机访问</h3><span class="text-xs dim">同一 WiFi</span></div>
+        <div class="card-title"><h3>${api.isLocal() ? '本地数据' : '手机访问'}</h3><span class="text-xs dim">${api.isLocal() ? '存在手机里' : '同一 WiFi'}</span></div>
         <div id="lan-list" class="stack" style="gap:6px">
           <p class="text-sm dim">正在获取地址……</p>
         </div>
-        <p class="hint" style="margin-top:8px">手机连同一个 WiFi，用浏览器打开上面的地址；可以「添加到主屏幕」当 App 用。校园网若开了客户端隔离，改用手机热点让电脑连接。</p>
+        <p class="hint" style="margin-top:8px">${api.isLocal()
+          ? 'PWA 本地模式：数据存在这台手机的浏览器里，不需要电脑。换手机或清理浏览器数据前，记得先导出备份。'
+          : '手机连同一个 WiFi，用浏览器打开上面的地址；可以「添加到主屏幕」当 App 用。校园网若开了客户端隔离，改用手机热点让电脑连接。'}</p>
       </section>
 
       <section class="card pad">
@@ -169,6 +172,14 @@ function downloadBlob(blob, filename) {
 }
 
 async function exportDb(store) {
+  if (api.isLocal()) {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '');
+    const blob = new Blob([JSON.stringify(store.state, null, 2)], { type: 'application/json' });
+    downloadBlob(blob, `cauc-backup-${stamp}.json`);
+    store.update((d) => { d.data.meta.lastExportAt = new Date().toISOString(); });
+    toast('备份已导出');
+    return;
+  }
   const res = await fetch(api.exportUrl());
   if (!res.ok) throw new Error('导出失败');
   const disposition = res.headers.get('content-disposition') || '';
@@ -201,6 +212,18 @@ async function importFlow(store) {
     }
     const choice = await chooseImportMode();
     if (!choice) return;
+    if (api.isLocal()) {
+      try {
+        const next = choice === 'merge' ? mergeDb(store.state, payload) : payload;
+        if (!next || !next.data) throw new Error('文件缺少 data');
+        store.replace(next);
+        await store.flush();
+        toast(choice === 'merge' ? '已合并导入' : '已覆盖导入');
+      } catch (err) {
+        toast(`导入失败：${err.message}`, { tone: 'error', duration: 4000 });
+      }
+      return;
+    }
     try {
       await api.importDb(choice, payload);
       const db = await api.getDb();
@@ -237,6 +260,10 @@ function chooseImportMode() {
 }
 
 async function restoreFlow(store) {
+  if (api.isLocal()) {
+    toast('本地模式没有自动快照，请用「导出备份」');
+    return;
+  }
   let backups = [];
   try {
     backups = await api.listBackups();
@@ -596,6 +623,11 @@ async function copyText(text) {
 function loadLanInfo(root) {
   const box = root.querySelector('#lan-list');
   if (!box) return;
+
+  if (api.isLocal()) {
+    box.innerHTML = '<p class="text-sm dim">本地模式：数据保存在这台手机的浏览器里，不需要电脑。</p>';
+    return;
+  }
 
   api.info().then((info) => {
     const urls = info.lanUrls || [];
