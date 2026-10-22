@@ -99,7 +99,7 @@
   backdrop-filter: blur(10px);
   border-top: 1px solid var(--line);
 }
-.tabbar .tabs { display: grid; grid-template-columns: repeat(4, 1fr); height: var(--tabbar-h); }
+.tabbar .tabs { display: grid; grid-template-columns: repeat(5, 1fr); height: var(--tabbar-h); }
 .tabbar a, .tabbar button {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
   color: var(--text-3); font-size: 11px; background: none; border: none; width: 100%;
@@ -141,6 +141,13 @@
   .form-grid { grid-template-columns: 1fr; }
   .toast-root { left: 16px; right: 16px; bottom: calc(var(--tabbar-h) + 16px); align-items: center; }
   .undo-bar { bottom: calc(var(--tabbar-h) + 24px); width: min(360px, calc(100% - 32px)); justify-content: space-between; }
+}
+
+@media (max-width: 480px) {
+  .topbar { gap: 6px; }
+  .topbar h1 { font-size: 16px; }
+  .topbar .btn.primary { padding-inline: 10px; }
+  .add-text { display: none; }
 }
 
 @keyframes slide-up { from { transform: translateY(20px); opacity: .5; } to { transform: none; opacity: 1; } }

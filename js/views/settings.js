@@ -112,6 +112,14 @@ export function render(state, ctx = {}) {
       </section>
 
       <section class="card pad">
+        <div class="card-title"><h3>手机访问</h3><span class="text-xs dim">同一 WiFi</span></div>
+        <div id="lan-list" class="stack" style="gap:6px">
+          <p class="text-sm dim">正在获取地址……</p>
+        </div>
+        <p class="hint" style="margin-top:8px">手机连同一个 WiFi，用浏览器打开上面的地址；可以「添加到主屏幕」当 App 用。校园网若开了客户端隔离，改用手机热点让电脑连接。</p>
+      </section>
+
+      <section class="card pad">
         <div class="card-title"><h3>偏好</h3></div>
         <div class="form-grid">
           <div class="field">
@@ -563,7 +571,59 @@ export function importCourses(store) {
   input.click();
 }
 
+async function copyText(text) {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* 继续用兜底方案 */ }
+  try {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.appendChild(area);
+    area.select();
+    const ok = document.execCommand('copy');
+    area.remove();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function loadLanInfo(root) {
+  const box = root.querySelector('#lan-list');
+  if (!box) return;
+
+  api.info().then((info) => {
+    const urls = info.lanUrls || [];
+    if (!urls.length) {
+      box.innerHTML = '<p class="text-sm dim">没检测到局域网地址，检查一下 WiFi。</p>';
+      return;
+    }
+    box.innerHTML = urls.map((url) => `
+      <div class="row-between" style="gap:8px">
+        <code class="text-sm">${esc(url)}</code>
+        <button class="btn sm" type="button" data-copy-url="${esc(url)}">复制</button>
+      </div>`).join('');
+
+    box.querySelectorAll('[data-copy-url]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const ok = await copyText(btn.dataset.copyUrl);
+        if (ok) toast('地址已复制');
+        else toast('复制失败，请手动选中', { tone: 'error' });
+      });
+    });
+  }).catch(() => {
+    box.innerHTML = '<p class="text-sm dim">读取地址失败。</p>';
+  });
+}
+
 export function bind(root, { store, rerender }) {
+  loadLanInfo(root);
+
   root.addEventListener('click', (event) => {
     const el = event.target.closest('[data-action]');
     if (!el) return;

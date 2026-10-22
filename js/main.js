@@ -49,6 +49,7 @@ export const NAV = [
 const TAB_ITEMS = [
   { name: 'home', label: '首页', icon: ICONS.home },
   { name: 'classes', label: '课表', icon: ICONS.classes },
+  { name: 'homework', label: '作业', icon: ICONS.homework },
   { name: 'todos', label: '待办', icon: ICONS.todos },
   { name: 'more', label: '更多', icon: ICONS.settings }
 ];
@@ -114,7 +115,7 @@ app.innerHTML = `
             <span class="search-pill-text">搜索</span>
             <kbd>Ctrl K</kbd>
           </button>
-          <button class="btn primary sm" data-action="quick-add">＋ 添加</button>
+          <button class="btn primary sm" data-action="quick-add">＋<span class="add-text"> 添加</span></button>
         </div>
       </header>
       <section class="view" id="view"></section>
