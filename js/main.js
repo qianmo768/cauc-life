@@ -1,5 +1,7 @@
 import { api, setMode } from './api.js';
 import { requestPersist } from './core/localdb.js';
+import { Sync } from './core/sync.js';
+import { applySyncHash } from './core/cloud.js';
 import { Store } from './store.js';
 import { createRouter } from './router.js';
 import { toast } from './ui/toast.js';
@@ -141,8 +143,13 @@ const titleEl = document.getElementById('page-title');
 const subEl = document.getElementById('page-sub');
 const saveStateEl = document.getElementById('save-state');
 
+let sync = null;
+
 const store = new Store({
-  save: (db) => api.putDb(db),
+  save: (db) => api.putDb(db).then((result) => {
+    if (sync) sync.schedule();
+    return result;
+  }),
   onStatus: (type, payload) => {
     if (!saveStateEl) return;
     if (type === 'saving') {
@@ -158,6 +165,8 @@ const store = new Store({
 });
 
 let currentRoute = 'home';
+
+sync = new Sync(store);
 
 function setActive(name) {
   document.querySelectorAll('[data-nav]').forEach((el) => {
@@ -196,8 +205,8 @@ function renderRoute(name) {
   viewEl.replaceWith(fresh);
   viewEl = fresh;
 
-  viewEl.innerHTML = view.render(store.state, { title: item.title, route: name, store });
-  if (typeof view.bind === 'function') view.bind(viewEl, { store, route: name, rerender: () => renderRoute(currentRoute) });
+  viewEl.innerHTML = view.render(store.state, { title: item.title, route: name, store, sync });
+  if (typeof view.bind === 'function') view.bind(viewEl, { store, route: name, rerender: () => renderRoute(currentRoute), sync });
 
   if (focusKey) {
     const next = viewEl.querySelector(`[data-focus-key="${focusKey}"]`);
@@ -367,7 +376,12 @@ async function boot() {
       }
     }
 
-    const db = await api.getDb();
+    applySyncHash();
+
+    const localDb = await api.getDb();
+    let db = await sync.prepare(localDb);
+    if (db !== localDb) await api.putDb(db);
+
     applyTheme(db.data.settings.theme);
     applyBackground(db.data.settings);
     const recovered = recoverRunningTimer(db);
@@ -379,9 +393,10 @@ async function boot() {
       if (recovered) toast('上次的计时已自动记下');
     }
     router.start();
+    if (sync.enabled) sync.start();
 
-    // 手机上提醒备份：超过 7 天没导出就提醒一次
-    if (mode === 'local') {
+    // 手机上提醒备份：超过 7 天没导出就提醒一次（开了云同步就不用）
+    if (mode === 'local' && !sync.enabled) {
       const data = db.data;
       const hasAny = (data.courses || []).length + (data.todos || []).length + (data.assignments || []).length +
         (data.budget && data.budget.expenses ? data.budget.expenses.length : 0) +

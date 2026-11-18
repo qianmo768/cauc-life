@@ -8,6 +8,7 @@ import { openModal } from '../ui/modal.js';
 import { confirmDialog } from '../ui/confirm.js';
 import { toast } from '../ui/toast.js';
 import { mergeDb } from '../core/merge.js';
+import { encodeSyncHash } from '../core/cloud.js';
 
 function countText(counts) {
   const rows = [
@@ -34,6 +35,9 @@ export function render(state, ctx = {}) {
   const settings = state.data.settings;
   const bgImage = isImageDataUrl(settings.backgroundImage) ? settings.backgroundImage : null;
   const lastExport = settings && state.data.meta && state.data.meta.lastExportAt;
+  const syncClient = ctx.sync;
+  const syncConfig = syncClient ? syncClient.config : null;
+  const syncEnabled = Boolean(syncClient && syncClient.enabled);
 
   return `
     <div class="stack">
@@ -52,6 +56,30 @@ export function render(state, ctx = {}) {
           ${api.isLocal() ? '' : '<button class="btn" type="button" data-action="restore">从自动快照恢复</button>'}
         </div>
         <p class="hint" style="margin-top:8px">${api.isLocal() ? '数据存在手机浏览器里，建议每周导出一次备份。' : '数据保存在本机，建议每周导出一次。'}</p>
+      </section>
+
+      <section class="card pad">
+        <div class="card-title"><h3>云同步（GitHub Gist）</h3><span class="text-xs dim">${syncEnabled ? '已开启' : '未开启'}</span></div>
+        <div class="stack" style="gap:8px">
+          <div class="field">
+            <label>GitHub Token（只需 gist 权限）</label>
+            <input class="input" id="sync-token" type="password" placeholder="ghp_..." value="${esc(syncConfig && syncConfig.token ? syncConfig.token : '')}">
+            <span class="hint">GitHub → Settings → Developer settings → Tokens (classic) → 勾选 gist。Token 只存本机，不会发给别人。</span>
+          </div>
+          <div class="row wrap">
+            <button class="btn primary sm" type="button" data-action="sync-enable">保存并同步</button>
+            <button class="btn sm" type="button" data-action="sync-now">立即同步</button>
+            <button class="btn sm" type="button" data-action="sync-link">复制同步链接</button>
+            <button class="btn danger sm" type="button" data-action="sync-off">关闭同步</button>
+          </div>
+          <div class="text-xs dim">
+            ${syncConfig
+              ? `Gist：${esc(syncConfig.gistId || '')} · 账号：${esc(syncConfig.login || '')} · 上次同步：${syncConfig.lastSyncAt ? esc(String(syncConfig.lastSyncAt).slice(0, 19).replace('T', ' ')) : '还没'}`
+              : '还没有开启云同步'}
+          </div>
+          ${syncClient && syncClient.lastError ? `<p class="err">${esc(syncClient.lastError)}</p>` : ''}
+          <p class="hint">开启后：打开自动拉取，改动自动推送。把「同步链接」添加到主屏幕，浏览器清了本地数据也能打开即恢复。</p>
+        </div>
       </section>
 
       <section class="card pad">
@@ -674,7 +702,70 @@ function loadLanInfo(root) {
   });
 }
 
-export function bind(root, { store, rerender }) {
+async function enableSync(store, rerender, sync) {
+  const input = document.querySelector('#sync-token');
+  const token = input ? input.value.trim() : '';
+  if (!token) { toast('先填 GitHub Token', { tone: 'error' }); return; }
+  if (!sync) { toast('云同步不可用', { tone: 'error' }); return; }
+  toast('正在连接 GitHub…');
+  try {
+    const result = await sync.enable(token);
+    if (result.error) {
+      toast(`同步失败：${result.error}`, { tone: 'error', duration: 5000 });
+      return;
+    }
+    await store.flush();
+    rerender();
+    toast(`已开启云同步（${result.login}）`);
+  } catch (err) {
+    toast(`开启失败：${err.message}`, { tone: 'error', duration: 5000 });
+  }
+}
+
+async function runSyncNow(sync) {
+  if (!sync || !sync.enabled) { toast('还没有开启云同步', { tone: 'error' }); return; }
+  toast('同步中…');
+  const result = await sync.syncNow();
+  if (result.error) toast(`同步失败：${result.error}`, { tone: 'error', duration: 5000 });
+  else toast('已同步');
+}
+
+async function copySyncLink(sync) {
+  const config = sync && sync.config;
+  if (!config || !config.token) { toast('先保存并同步一次', { tone: 'error' }); return; }
+  const url = `${location.origin}${location.pathname}#sync=${encodeSyncHash(config.token, config.gistId)}`;
+  const ok = await copyText(url);
+  openModal({
+    title: '同步链接',
+    body: `
+      <div class="stack">
+        <p class="hint">把这个网址添加到手机主屏幕或收藏夹。以后即使浏览器清了数据，从它打开也会自动恢复。</p>
+        <textarea class="textarea" readonly style="min-height:80px">${esc(url)}</textarea>
+        <p class="text-xs dim">链接里包含 Token，别发给别人。</p>
+      </div>
+    `,
+    footer: '<button class="btn primary" type="button" data-cancel>知道了</button>',
+    onMount: (mask, { close }) => {
+      mask.querySelector('[data-cancel]').addEventListener('click', close);
+    }
+  });
+  if (ok) toast('同步链接已复制');
+}
+
+async function disableSync(store, rerender, sync) {
+  const ok = await confirmDialog({
+    title: '关闭云同步',
+    message: '关闭后本地数据保留，但不再自动同步。确定吗？',
+    confirmText: '关闭',
+    danger: true
+  });
+  if (!ok) return;
+  await sync.disable();
+  rerender();
+  toast('已关闭云同步');
+}
+
+export function bind(root, { store, rerender, sync }) {
   loadLanInfo(root);
 
   root.addEventListener('click', (event) => {
@@ -685,6 +776,10 @@ export function bind(root, { store, rerender }) {
     if (action === 'export') exportDb(store).catch((err) => toast(`导出失败：${err.message}`, { tone: 'error' }));
     else if (action === 'import') importFlow(store);
     else if (action === 'restore') restoreFlow(store);
+    else if (action === 'sync-enable') enableSync(store, rerender, sync);
+    else if (action === 'sync-now') runSyncNow(sync);
+    else if (action === 'sync-link') copySyncLink(sync);
+    else if (action === 'sync-off') disableSync(store, rerender, sync);
     else if (action === 'edit-slots') openSlotsEditor(store);
     else if (action === 'clear-module') clearModule(store);
     else if (action === 'clear-all') clearAll(store);

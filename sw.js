@@ -1,5 +1,5 @@
 // 离线缓存：只在本地模式（PWA）注册
-const CACHE = 'cauc-life-v2';
+const CACHE = 'cauc-life-v3';
 const SHELL = [
   './',
   './index.html',
@@ -9,6 +9,8 @@ const SHELL = [
   './css/components.css',
   './css/layout.css',
   './js/main.js',
+  './js/core/cloud.js',
+  './js/core/sync.js',
   './icons/icon-192.png'
 ];
 
