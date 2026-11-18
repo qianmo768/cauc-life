@@ -1,5 +1,5 @@
 // 与服务端通信；本地模式（PWA）下自动改用 IndexedDB
-import { localGetDb, localPutDb } from './core/localdb.js';
+import { localGetDb, localPutDb, storageInfo as localStorageInfo } from './core/localdb.js';
 import { defaultData } from './core/defaultData.js';
 
 let mode = 'server';
@@ -96,5 +96,9 @@ export const api = {
   async info() {
     if (mode === 'local') return { ok: true, mode: 'local', lanUrls: [], version: 1 };
     return (await request('/api/info')).json();
+  },
+  async storageInfo() {
+    if (mode === 'local') return localStorageInfo();
+    return null;
   }
 };

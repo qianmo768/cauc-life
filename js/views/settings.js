@@ -620,12 +620,33 @@ async function copyText(text) {
   }
 }
 
+function formatBytes(bytes) {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes)) return '—';
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
+
 function loadLanInfo(root) {
   const box = root.querySelector('#lan-list');
   if (!box) return;
 
   if (api.isLocal()) {
-    box.innerHTML = '<p class="text-sm dim">本地模式：数据保存在这台手机的浏览器里，不需要电脑。</p>';
+    api.storageInfo().then((info) => {
+      box.innerHTML = `
+        <div class="kv"><span>存储方式</span><span>IndexedDB（本机浏览器）</span></div>
+        <div class="kv"><span>持久化</span><span>${info && info.persisted ? '已授权' : '浏览器未授权'}</span></div>
+        <div class="kv"><span>已用空间</span><span>${formatBytes(info && info.usage)}${info && info.quota ? ` / ${formatBytes(info.quota)}` : ''}</span></div>
+        <div class="kv"><span>镜像副本</span><span>${info && info.mirror ? '有' : '无'}</span></div>`;
+      if (!info || !info.persisted) {
+        const warn = document.createElement('p');
+        warn.className = 'hint';
+        warn.textContent = '浏览器没给持久化授权，长期不打开或清理数据可能被回收；请添加到主屏幕，并定期导出备份。';
+        box.appendChild(warn);
+      }
+    }).catch(() => {
+      box.innerHTML = '<p class="text-sm dim">本地模式：数据保存在这台手机的浏览器里，不需要电脑。</p>';
+    });
     return;
   }
 

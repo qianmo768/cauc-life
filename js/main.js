@@ -223,6 +223,16 @@ store.subscribe((state) => {
   renderRoute(currentRoute);
 });
 
+// 手机切后台/关页面时，把没写完的改动强制落盘
+const flushSoon = () => {
+  store.flush().catch(() => {});
+};
+window.addEventListener('pagehide', flushSoon);
+window.addEventListener('beforeunload', flushSoon);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') flushSoon();
+});
+
 // 手动全局保存：先把待写入的改动落盘，再存一份快照
 async function manualSave() {
   try {
@@ -369,6 +379,23 @@ async function boot() {
       if (recovered) toast('上次的计时已自动记下');
     }
     router.start();
+
+    // 手机上提醒备份：超过 7 天没导出就提醒一次
+    if (mode === 'local') {
+      const data = db.data;
+      const hasAny = (data.courses || []).length + (data.todos || []).length + (data.assignments || []).length +
+        (data.budget && data.budget.expenses ? data.budget.expenses.length : 0) +
+        (data.fun && data.fun.records ? data.fun.records.length : 0) > 0;
+      if (hasAny) {
+        const last = data.meta && data.meta.lastExportAt;
+        const days = last ? Math.floor((Date.now() - Date.parse(last)) / 86400000) : null;
+        if (days === null || days >= 7) {
+          setTimeout(() => {
+            toast(days === null ? '还没导出过备份，建议去设置导出一次' : `已经 ${days} 天没备份了，建议导出一次`, { duration: 6000 });
+          }, 1200);
+        }
+      }
+    }
   } catch (err) {
     const local = api.isLocal();
     viewEl.innerHTML = `

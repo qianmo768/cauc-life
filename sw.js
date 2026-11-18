@@ -1,5 +1,5 @@
 // 离线缓存：只在本地模式（PWA）注册
-const CACHE = 'cauc-life-v1';
+const CACHE = 'cauc-life-v2';
 const SHELL = [
   './',
   './index.html',
