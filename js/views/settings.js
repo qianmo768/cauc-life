@@ -74,9 +74,10 @@ export function render(state, ctx = {}) {
           </div>
           <div class="text-xs dim">
             ${syncConfig
-              ? `Gist：${esc(syncConfig.gistId || '')} · 账号：${esc(syncConfig.login || '')} · 上次同步：${syncConfig.lastSyncAt ? esc(String(syncConfig.lastSyncAt).slice(0, 19).replace('T', ' ')) : '还没'}`
-              : '还没有开启云同步'}
+              ? `状态：Token 已保存 · Gist：${esc(syncConfig.gistId || '')} · 账号：${esc(syncConfig.login || '')} · 上次同步：${syncConfig.lastSyncAt ? esc(String(syncConfig.lastSyncAt).slice(0, 19).replace('T', ' ')) : '还没'}`
+              : '状态：Token 未保存（浏览器可能清过数据）'}
           </div>
+          ${!syncConfig ? '<p class="err">如果之前开过云同步，请用「同步链接」打开，不要用普通网址；否则重新粘贴 Token 开启。</p>' : ''}
           ${syncClient && syncClient.lastError ? `<p class="err">${esc(syncClient.lastError)}</p>` : ''}
           <p class="hint">开启后：打开自动拉取，改动自动推送。把「同步链接」添加到主屏幕，浏览器清了本地数据也能打开即恢复。</p>
         </div>
@@ -733,15 +734,20 @@ async function runSyncNow(sync) {
 async function copySyncLink(sync) {
   const config = sync && sync.config;
   if (!config || !config.token) { toast('先保存并同步一次', { tone: 'error' }); return; }
-  const url = `${location.origin}${location.pathname}#sync=${encodeSyncHash(config.token, config.gistId)}`;
+  const url = `${location.origin}${location.pathname}sync.html#sync=${encodeSyncHash(config.token, config.gistId)}`;
   const ok = await copyText(url);
   openModal({
-    title: '同步链接',
+    title: '同步链接（重要）',
     body: `
       <div class="stack">
-        <p class="hint">把这个网址添加到手机主屏幕或收藏夹。以后即使浏览器清了数据，从它打开也会自动恢复。</p>
-        <textarea class="textarea" readonly style="min-height:80px">${esc(url)}</textarea>
-        <p class="text-xs dim">链接里包含 Token，别发给别人。</p>
+        <p class="hint">这个链接会先恢复同步密钥，再进入应用。请按顺序操作：</p>
+        <ol class="text-sm" style="line-height:1.9;padding-left:18px">
+          <li>复制下面的链接，在手机浏览器里打开；</li>
+          <li>页面显示「进入应用」时，先用浏览器菜单把<strong>这个页面</strong>添加到主屏幕；</li>
+          <li>再点「进入应用」。以后从桌面图标打开，即使浏览器清过数据也会自动恢复。</li>
+        </ol>
+        <textarea class="textarea" readonly style="min-height:90px">${esc(url)}</textarea>
+        <p class="text-xs dim">链接里包含 Token，别发给别人。不要用普通网址添加到主屏幕。</p>
       </div>
     `,
     footer: '<button class="btn primary" type="button" data-cancel>知道了</button>',

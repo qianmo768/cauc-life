@@ -115,18 +115,21 @@ export async function pushGist(token, gistId, db, { keepalive = false } = {}) {
 }
 
 export function encodeSyncHash(token, gistId) {
-  return btoa(JSON.stringify({ t: token, g: gistId }));
+  const raw = btoa(JSON.stringify({ t: token, g: gistId }));
+  return raw.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 export function decodeSyncHash(value) {
   try {
-    const payload = JSON.parse(atob(value));
+    let raw = String(value).replace(/-/g, '+').replace(/_/g, '/');
+    while (raw.length % 4) raw += '=';
+    const payload = JSON.parse(atob(raw));
     if (payload && payload.t && payload.g) return { token: payload.t, gistId: payload.g };
   } catch { /* 忽略 */ }
   return null;
 }
 
-/** 把地址栏 #sync=... 解析成配置并保存，然后清掉地址栏里的密钥 */
+/** 把地址栏 #sync=... 解析成配置并保存（保留地址栏里的密钥，方便添加主屏） */
 export function applySyncHash(locationLike) {
   const loc = locationLike || (typeof location !== 'undefined' ? location : null);
   if (!loc || !loc.hash) return null;
@@ -135,10 +138,5 @@ export function applySyncHash(locationLike) {
   const parsed = decodeSyncHash(decodeURIComponent(match[1]));
   if (!parsed) return null;
   saveConfig({ ...parsed, lastSyncAt: null });
-  try {
-    if (loc.href && typeof history !== 'undefined' && history.replaceState) {
-      history.replaceState(null, '', `${loc.pathname}${loc.search}`);
-    }
-  } catch { /* 忽略 */ }
   return parsed;
 }
