@@ -68,6 +68,7 @@ export function render(state, ctx = {}) {
           </div>
           <div class="row wrap">
             <button class="btn primary sm" type="button" data-action="sync-enable">保存并同步</button>
+            <button class="btn sm" type="button" data-action="sync-push">上传本机到云端</button>
             <button class="btn sm" type="button" data-action="sync-now">立即同步</button>
             <button class="btn sm" type="button" data-action="sync-link">复制同步链接</button>
             <button class="btn danger sm" type="button" data-action="sync-off">关闭同步</button>
@@ -723,6 +724,22 @@ async function enableSync(store, rerender, sync) {
   }
 }
 
+async function uploadLocal(sync) {
+  if (!sync || !sync.enabled) { toast('先保存并同步一次', { tone: 'error' }); return; }
+  const ok = await confirmDialog({
+    title: '上传本机到云端',
+    message: '会用当前这台设备的数据覆盖云端，确定吗？',
+    confirmText: '上传'
+  });
+  if (!ok) return;
+  try {
+    await sync.pushLocal();
+    toast('已上传到云端');
+  } catch (err) {
+    toast(`上传失败：${err.message}`, { tone: 'error', duration: 5000 });
+  }
+}
+
 async function runSyncNow(sync) {
   if (!sync || !sync.enabled) { toast('还没有开启云同步', { tone: 'error' }); return; }
   toast('同步中…');
@@ -783,6 +800,7 @@ export function bind(root, { store, rerender, sync }) {
     else if (action === 'import') importFlow(store);
     else if (action === 'restore') restoreFlow(store);
     else if (action === 'sync-enable') enableSync(store, rerender, sync);
+    else if (action === 'sync-push') uploadLocal(sync);
     else if (action === 'sync-now') runSyncNow(sync);
     else if (action === 'sync-link') copySyncLink(sync);
     else if (action === 'sync-off') disableSync(store, rerender, sync);

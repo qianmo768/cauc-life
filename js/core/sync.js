@@ -4,7 +4,7 @@ import {
 } from './cloud.js';
 import { mergeDb } from './merge.js';
 
-function hasContent(db) {
+export function hasContent(db) {
   const data = db && db.data;
   if (!data) return false;
   const count = (value) => (Array.isArray(value) ? value.length : 0);
@@ -22,8 +22,13 @@ export function chooseSyncAction(local, remote, lastSyncAt) {
   if (!hasRemote) return hasLocal ? 'push' : 'none';
   if (!hasLocal) return 'pull';
 
-  // 本地只是刚生成的空默认数据，绝不能覆盖云端
-  if (!hasContent(local)) return 'pull';
+  const localHas = hasContent(local);
+  const remoteHas = hasContent(remote);
+
+  // 云端没有实际内容时，绝不用它覆盖本机
+  if (localHas && !remoteHas) return 'push';
+  if (!localHas && remoteHas) return 'pull';
+  if (!localHas && !remoteHas) return 'none';
 
   const localTime = Date.parse(local.updatedAt || 0) || 0;
   const remoteTime = Date.parse(remote.updatedAt || 0) || 0;
@@ -59,8 +64,40 @@ export class Sync {
     const login = await validateToken(token);
     const gist = await findOrCreateGist(token);
     saveConfig({ token, gistId: gist.id, login, lastSyncAt: null });
-    const result = await this.syncNow();
-    return { login, gistId: gist.id, ...result };
+
+    // 开启时：本机和云端都有内容就合并，云端为空则以本机为准，最后统一上传
+    const remote = await pullGist(token, gist.id).catch(() => null);
+    const local = this.store.state;
+    let next = local;
+    let action = 'push';
+    if (hasContent(local) && hasContent(remote)) {
+      next = mergeDb(local, remote);
+      action = 'merge';
+    } else if (!hasContent(local) && hasContent(remote)) {
+      next = remote;
+      action = 'pull';
+    }
+
+    if (next !== local) {
+      this.store.replace(next);
+      await this.store.flush();
+    }
+    await pushGist(token, gist.id, this.store.state);
+    saveConfig({ ...this.config, lastSyncAt: new Date().toISOString() });
+    this.lastAction = action;
+    this.lastError = null;
+    return { login, gistId: gist.id, ok: true, action };
+  }
+
+  /** 强制把本机数据上传到云端（以本机为准） */
+  async pushLocal() {
+    if (!this.enabled) throw new Error('还没有开启云同步');
+    const config = this.config;
+    await pushGist(config.token, config.gistId, this.store.state);
+    saveConfig({ ...config, lastSyncAt: new Date().toISOString() });
+    this.lastError = null;
+    this.lastAction = 'push';
+    return { ok: true };
   }
 
   async disable() {
